@@ -7,9 +7,11 @@ import {
   Search,
   Sparkles,
   Trash2,
+  Upload,
   X,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import { ImportVolumeModal } from '../components/ImportVolumeModal'
 import {
   createSeries,
   createVolume,
@@ -89,6 +91,7 @@ export function DashboardPage({
   const [volRtas, setVolRtas] = useState<number>(3.0)
   const [volStatus, setVolStatus] = useState<VolumeStatus>('imported')
   const [savingVolume, setSavingVolume] = useState(false)
+  const [importingVolume, setImportingVolume] = useState<Volume | null>(null)
 
   const notify = (msg: string) => {
     setToastMsg(msg)
@@ -687,6 +690,19 @@ export function DashboardPage({
                           <div className="flex items-center gap-1 shrink-0">
                             <button
                               type="button"
+                              title="Nhập tệp .epub/.txt/.docx"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                onSelectVolume(vol)
+                                setImportingVolume(vol)
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/15 cursor-pointer"
+                            >
+                              <Upload className="w-3.5 h-3.5" />
+                              Nhập truyện
+                            </button>
+                            <button
+                              type="button"
                               title="Sửa tập"
                               onClick={(e) => {
                                 e.stopPropagation()
@@ -1094,6 +1110,19 @@ export function DashboardPage({
             </form>
           </div>
         </div>
+      )}
+      {/* Import Volume Book Modal */}
+      {importingVolume && selectedSeries && (
+        <ImportVolumeModal
+          volume={importingVolume}
+          seriesTitle={selectedSeries.title}
+          onClose={() => setImportingVolume(null)}
+          onImported={(res) => {
+            notify(
+              `Đã nhập ${res.chapters_imported} chương (${res.total_chars.toLocaleString('vi-VN')} ký tự) vào Tập ${importingVolume.volume_number}.`,
+            )
+          }}
+        />
       )}
     </div>
   )

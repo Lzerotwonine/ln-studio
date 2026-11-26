@@ -264,3 +264,150 @@ class PromptPresetResponse(BaseModel):
     source_lang: PresetSourceLang
     mode: TranslationMode
     content: str
+
+
+# ---------- Phase 2: Chapters & Import ----------
+
+SplitMode = Literal["epub_chapters", "chunk_chars"]
+GlossaryStatus = Literal["new", "translated", "approved", "ignored"]
+
+
+class ImportedChapterItem(BaseModel):
+    id: int
+    volume_id: int
+    chapter_index: int
+    title: str
+    char_count: int
+    status: str
+
+
+class VolumeImportResponse(BaseModel):
+    volume_id: int
+    filename: str
+    split_mode: SplitMode
+    keep_furigana: bool
+    chapters_imported: int
+    total_chars: int
+    chapters: list[ImportedChapterItem]
+
+
+class ChapterSummaryResponse(BaseModel):
+    id: int
+    volume_id: int
+    chapter_index: int
+    title: str
+    char_count: int
+    preview: str
+    status: str
+    updated_at: str
+
+
+class ChapterDetailResponse(BaseModel):
+    id: int
+    volume_id: int
+    chapter_index: int
+    title: str
+    raw_text: str
+    translated_text: str
+    status: str
+    updated_at: str
+
+
+# ---------- Phase 2: Master Glossary ----------
+
+class GlossaryTermCreate(BaseModel):
+    source_term: str = Field(..., min_length=1, max_length=120)
+    vi_term: str = ""
+    reading: str = ""
+    han_viet: str = ""
+    english_meaning: str = ""
+    term_type: str = "Concept"
+    status: GlossaryStatus = "new"
+    first_seen_vol: int = Field(default=1, ge=1)
+    total_freq: int = Field(default=1, ge=1)
+
+    @field_validator("source_term")
+    @classmethod
+    def strip_source_term(cls, v: str) -> str:
+        cleaned = v.strip()
+        if not cleaned:
+            raise ValueError("Thuật ngữ gốc không được để trống.")
+        return cleaned
+
+
+class GlossaryTermUpdate(BaseModel):
+    vi_term: str | None = None
+    reading: str | None = None
+    han_viet: str | None = None
+    english_meaning: str | None = None
+    term_type: str | None = None
+    status: GlossaryStatus | None = None
+
+
+class GlossaryTermResponse(BaseModel):
+    id: int
+    series_id: int
+    source_term: str
+    normalized_key: str
+    vi_term: str
+    reading: str
+    han_viet: str
+    english_meaning: str
+    term_type: str
+    status: GlossaryStatus
+    first_seen_vol: int
+    total_freq: int
+    volume_freq: int | None = None
+
+
+class GlossaryListResponse(BaseModel):
+    items: list[GlossaryTermResponse]
+    total_filtered: int
+    total_in_scope: int
+    status_counts: dict[str, int]
+
+
+class GlossaryExtractRequest(BaseModel):
+    min_freq: int = Field(default=1, ge=1, le=100)
+
+
+class GlossaryExtractResponse(BaseModel):
+    volume_id: int
+    series_id: int
+    source_lang: str
+    total_extracted: int
+    new_terms: int
+    existing_terms: int
+
+
+class GlossaryTranslateRequest(BaseModel):
+    volume_id: int | None = None
+    batch_size: int = Field(default=400, ge=1, le=500)
+    max_rounds: int = Field(default=3, ge=1, le=5)
+
+
+class GlossaryTranslateResponse(BaseModel):
+    series_id: int
+    volume_id: int | None = None
+    total_new_found: int
+    translated_count: int
+    missing_count: int
+    missing_terms: list[str]
+    batches_processed: int
+    rounds_used: int
+    used_slots: list[str]
+
+
+class GlossaryBulkStatusRequest(BaseModel):
+    term_ids: list[int] = Field(default_factory=list)
+    status: GlossaryStatus
+
+
+class GlossaryBulkDeleteRequest(BaseModel):
+    term_ids: list[int] = Field(default_factory=list)
+
+
+class GlossaryImportResponse(BaseModel):
+    imported: int
+    updated: int
+    skipped: int

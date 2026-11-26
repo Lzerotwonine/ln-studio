@@ -11,6 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.api.chapters import router as chapters_router
+from app.api.glossary import router as glossary_router
 from app.api.presets import router as presets_router
 from app.api.series import router as series_router
 from app.api.settings import router as settings_router
@@ -64,6 +66,8 @@ def create_app(dist_dir: Path | None = None) -> FastAPI:
     app.include_router(series_router)
     app.include_router(settings_router)
     app.include_router(presets_router)
+    app.include_router(chapters_router)
+    app.include_router(glossary_router)
 
     # Auto-serve built frontend if frontend/dist exists
     resolved_dist = dist_dir if dist_dir is not None else FRONTEND_DIST_DIR

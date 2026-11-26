@@ -1,6 +1,13 @@
 import axios from 'axios'
 import type {
   ApiKeyItem,
+  ChapterSummary,
+  GlossaryExtractResponse,
+  GlossaryImportResponse,
+  GlossaryListResponse,
+  GlossaryStatus,
+  GlossaryTerm,
+  GlossaryTranslateResponse,
   HealthInfo,
   ModelConfig,
   PromptPreset,
@@ -8,7 +15,9 @@ import type {
   QuotaStatusResponse,
   Series,
   SeriesPayload,
+  SplitMode,
   Volume,
+  VolumeImportResponse,
   VolumePayload,
 } from '../types'
 
@@ -187,4 +196,193 @@ export async function seedDefaultPresets(): Promise<{
     presets: PromptPreset[]
   }>('/api/presets/seed-defaults')
   return data
+}
+
+// ---------- Phase 2: Chapters & Book Import ----------
+
+export async function importVolumeBook(
+  volumeId: number,
+  file: File,
+  options: {
+    split_mode: SplitMode
+    keep_furigana: boolean
+    chunk_min?: number
+    chunk_max?: number
+    replace_existing?: boolean
+  },
+): Promise<VolumeImportResponse> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('split_mode', options.split_mode)
+  form.append('keep_furigana', String(options.keep_furigana))
+  form.append('chunk_min', String(options.chunk_min ?? 4000))
+  form.append('chunk_max', String(options.chunk_max ?? 5000))
+  form.append('replace_existing', String(options.replace_existing ?? true))
+
+  const { data } = await http.post<VolumeImportResponse>(
+    `/api/volumes/${volumeId}/import`,
+    form,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  )
+  return data
+}
+
+export async function fetchVolumeChapters(
+  volumeId: number,
+): Promise<ChapterSummary[]> {
+  const { data } = await http.get<ChapterSummary[]>(
+    `/api/volumes/${volumeId}/chapters`,
+  )
+  return data
+}
+
+// ---------- Phase 2: Master Glossary ----------
+
+export async function extractVolumeGlossary(
+  volumeId: number,
+  minFreq = 1,
+): Promise<GlossaryExtractResponse> {
+  const { data } = await http.post<GlossaryExtractResponse>(
+    `/api/volumes/${volumeId}/glossary/extract`,
+    { min_freq: minFreq },
+  )
+  return data
+}
+
+export async function translateNewGlossaryTerms(
+  seriesId: number,
+  options?: {
+    volume_id?: number | null
+    batch_size?: number
+    max_rounds?: number
+  },
+): Promise<GlossaryTranslateResponse> {
+  const { data } = await http.post<GlossaryTranslateResponse>(
+    `/api/series/${seriesId}/glossary/translate-new`,
+    {
+      volume_id: options?.volume_id ?? null,
+      batch_size: options?.batch_size ?? 400,
+      max_rounds: options?.max_rounds ?? 3,
+    },
+  )
+  return data
+}
+
+export async function fetchGlossary(
+  seriesId: number,
+  params?: {
+    volume_id?: number | null
+    status?: GlossaryStatus | null
+    term_type?: string | null
+    min_freq?: number
+    search?: string
+    limit?: number
+  },
+): Promise<GlossaryListResponse> {
+  const query: Record<string, string | number> = {}
+  if (params?.volume_id) query.volume_id = params.volume_id
+  if (params?.status) query.status = params.status
+  if (params?.term_type) query.term_type = params.term_type
+  if (params?.min_freq && params.min_freq > 1) query.min_freq = params.min_freq
+  if (params?.search?.trim()) query.search = params.search.trim()
+  if (params?.limit) query.limit = params.limit
+
+  const { data } = await http.get<GlossaryListResponse>(
+    `/api/series/${seriesId}/glossary`,
+    { params: query },
+  )
+  return data
+}
+
+export async function createGlossaryTerm(
+  seriesId: number,
+  payload: {
+    source_term: string
+    vi_term?: string
+    reading?: string
+    han_viet?: string
+    english_meaning?: string
+    term_type?: string
+    status?: GlossaryStatus
+  },
+): Promise<GlossaryTerm> {
+  const { data } = await http.post<GlossaryTerm>(
+    `/api/series/${seriesId}/glossary`,
+    payload,
+  )
+  return data
+}
+
+export async function updateGlossaryTerm(
+  termId: number,
+  payload: Partial<
+    Pick<
+      GlossaryTerm,
+      | 'vi_term'
+      | 'reading'
+      | 'han_viet'
+      | 'english_meaning'
+      | 'term_type'
+      | 'status'
+    >
+  >,
+): Promise<GlossaryTerm> {
+  const { data } = await http.patch<GlossaryTerm>(
+    `/api/glossary/${termId}`,
+    payload,
+  )
+  return data
+}
+
+export async function deleteGlossaryTerm(termId: number): Promise<void> {
+  await http.delete(`/api/glossary/${termId}`)
+}
+
+export async function bulkUpdateGlossaryStatus(
+  termIds: number[],
+  status: GlossaryStatus,
+): Promise<{ updated: number }> {
+  const { data } = await http.post<{ updated: number }>(
+    '/api/glossary/bulk-status',
+    { term_ids: termIds, status },
+  )
+  return data
+}
+
+export async function bulkDeleteGlossaryTerms(
+  termIds: number[],
+): Promise<{ deleted: number }> {
+  const { data } = await http.post<{ deleted: number }>(
+    '/api/glossary/bulk-delete',
+    { term_ids: termIds },
+  )
+  return data
+}
+
+export async function importGlossaryFile(
+  seriesId: number,
+  file: File,
+  defaultStatus: GlossaryStatus = 'approved',
+): Promise<GlossaryImportResponse> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('default_status', defaultStatus)
+  const { data } = await http.post<GlossaryImportResponse>(
+    `/api/series/${seriesId}/glossary/import`,
+    form,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  )
+  return data
+}
+
+export function getGlossaryExportUrl(
+  seriesId: number,
+  fmt: 'tsv' | 'csv',
+  volumeId?: number | null,
+  status?: GlossaryStatus | null,
+): string {
+  const sp = new URLSearchParams({ format: fmt })
+  if (volumeId) sp.set('volume_id', String(volumeId))
+  if (status) sp.set('status', status)
+  return `${baseURL}/api/series/${seriesId}/glossary/export?${sp.toString()}`
 }

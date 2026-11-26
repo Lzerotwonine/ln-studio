@@ -223,3 +223,130 @@ export const VOLUME_STATUS_META: Record<
       'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
   },
 }
+
+// ---------- Phase 2: Import & Master Glossary ----------
+
+export type SplitMode = 'epub_chapters' | 'chunk_chars'
+export type GlossaryStatus = 'new' | 'translated' | 'approved' | 'ignored'
+
+export const TERM_TYPES = [
+  'Character',
+  'Place',
+  'Skill',
+  'Item',
+  'Title',
+  'Organization',
+  'Race',
+  'Creature',
+  'Rank',
+  'Event',
+  'Concept',
+  'Language',
+  'Currency',
+] as const
+
+export const GLOSSARY_STATUS_META: Record<
+  GlossaryStatus,
+  { label: string; badgeClass: string }
+> = {
+  new: {
+    label: 'Chưa dịch',
+    badgeClass:
+      'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300',
+  },
+  translated: {
+    label: 'Đã dịch',
+    badgeClass:
+      'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300',
+  },
+  approved: {
+    label: 'Đã duyệt',
+    badgeClass:
+      'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
+  },
+  ignored: {
+    label: 'Bỏ qua',
+    badgeClass:
+      'bg-slate-200 text-slate-600 dark:bg-zinc-800 dark:text-zinc-400',
+  },
+}
+
+export interface ImportedChapterItem {
+  id: number
+  volume_id: number
+  chapter_index: number
+  title: string
+  char_count: number
+  status: string
+}
+
+export interface VolumeImportResponse {
+  volume_id: number
+  filename: string
+  split_mode: SplitMode
+  keep_furigana: boolean
+  chapters_imported: number
+  total_chars: number
+  chapters: ImportedChapterItem[]
+}
+
+export interface ChapterSummary {
+  id: number
+  volume_id: number
+  chapter_index: number
+  title: string
+  char_count: number
+  preview: string
+  status: string
+  updated_at: string
+}
+
+export interface GlossaryTerm {
+  id: number
+  series_id: number
+  source_term: string
+  normalized_key: string
+  vi_term: string
+  reading: string
+  han_viet: string
+  english_meaning: string
+  term_type: string
+  status: GlossaryStatus
+  first_seen_vol: number
+  total_freq: number
+  volume_freq: number | null
+}
+
+export interface GlossaryListResponse {
+  items: GlossaryTerm[]
+  total_filtered: number
+  total_in_scope: number
+  status_counts: Record<GlossaryStatus, number>
+}
+
+export interface GlossaryExtractResponse {
+  volume_id: number
+  series_id: number
+  source_lang: string
+  total_extracted: number
+  new_terms: number
+  existing_terms: number
+}
+
+export interface GlossaryTranslateResponse {
+  series_id: number
+  volume_id: number | null
+  total_new_found: number
+  translated_count: number
+  missing_count: number
+  missing_terms: string[]
+  batches_processed: number
+  rounds_used: number
+  used_slots: string[]
+}
+
+export interface GlossaryImportResponse {
+  imported: number
+  updated: number
+  skipped: number
+}

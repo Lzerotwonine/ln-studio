@@ -2,27 +2,16 @@ import { ArrowLeft, Construction } from 'lucide-react'
 import type { NavSection, Series, Volume } from '../types'
 
 interface PlaceholderPageProps {
-  section: Exclude<NavSection, 'dashboard' | 'settings'>
+  section: Exclude<NavSection, 'dashboard' | 'glossary' | 'settings'>
   selectedSeries: Series | null
   selectedVolume: Volume | null
   onBackToDashboard: () => void
 }
 
 const SECTION_DETAILS: Record<
-  Exclude<NavSection, 'dashboard' | 'settings'>,
+  Exclude<NavSection, 'dashboard' | 'glossary' | 'settings'>,
   { title: string; phase: string; description: string; highlights: string[] }
 > = {
-  glossary: {
-    title: 'Quản lý Thuật ngữ (Master Glossary)',
-    phase: 'Phase 2',
-    description:
-      'Trích xuất tự động thuật ngữ theo ngôn ngữ gốc (SudachiPy cho JA, jieba cho ZH, kiwipiepy cho KO), lọc theo tần suất từng tập và duyệt thuật ngữ xuyên suốt series.',
-    highlights: [
-      'Chuẩn hóa NFKC và chống trùng lặp thuật ngữ toàn bộ truyện',
-      'Theo dõi tần suất theo từng tập (volume_glossary_freq)',
-      'Xuất XML <GLOSSARY> deterministic từ SQLite',
-    ],
-  },
   characters: {
     title: 'Nhân vật & Ma trận Xưng hô',
     phase: 'Phase 3',

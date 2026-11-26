@@ -30,7 +30,7 @@ const NAV_ITEMS: Array<{
   phaseTag?: string
 }> = [
   { id: 'dashboard', label: 'Quản lý Truyện', icon: BookOpen },
-  { id: 'glossary', label: 'Thuật ngữ', icon: BookMarked, phaseTag: 'P2' },
+  { id: 'glossary', label: 'Thuật ngữ', icon: BookMarked },
   {
     id: 'characters',
     label: 'Nhân vật & Xưng hô',

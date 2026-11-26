@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { fetchHealth } from './lib/api'
 import { DashboardPage } from './pages/DashboardPage'
+import { GlossaryTab } from './pages/GlossaryTab'
 import { PlaceholderPage } from './pages/PlaceholderPage'
 import { SettingsPage } from './pages/SettingsPage'
 import type { NavSection, Series, Volume } from './types'
@@ -70,16 +71,28 @@ export function App() {
           />
         )}
 
-        {activeSection === 'settings' && <SettingsPage />}
-
-        {activeSection !== 'dashboard' && activeSection !== 'settings' && (
-          <PlaceholderPage
-            section={activeSection}
+        {activeSection === 'glossary' && (
+          <GlossaryTab
             selectedSeries={selectedSeries}
             selectedVolume={selectedVolume}
+            onSelectSeries={setSelectedSeries}
+            onSelectVolume={setSelectedVolume}
             onBackToDashboard={() => setActiveSection('dashboard')}
           />
         )}
+
+        {activeSection === 'settings' && <SettingsPage />}
+
+        {activeSection !== 'dashboard' &&
+          activeSection !== 'glossary' &&
+          activeSection !== 'settings' && (
+            <PlaceholderPage
+              section={activeSection}
+              selectedSeries={selectedSeries}
+              selectedVolume={selectedVolume}
+              onBackToDashboard={() => setActiveSection('dashboard')}
+            />
+          )}
       </main>
     </div>
   )
