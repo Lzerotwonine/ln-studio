@@ -4,7 +4,7 @@ import type { NavSection, Series, Volume } from '../types'
 interface PlaceholderPageProps {
   section: Exclude<
     NavSection,
-    'dashboard' | 'glossary' | 'characters' | 'settings'
+    'dashboard' | 'glossary' | 'characters' | 'translate' | 'settings'
   >
   selectedSeries: Series | null
   selectedVolume: Volume | null
@@ -12,20 +12,12 @@ interface PlaceholderPageProps {
 }
 
 const SECTION_DETAILS: Record<
-  Exclude<NavSection, 'dashboard' | 'glossary' | 'characters' | 'settings'>,
+  Exclude<
+    NavSection,
+    'dashboard' | 'glossary' | 'characters' | 'translate' | 'settings'
+  >,
   { title: string; phase: string; description: string; highlights: string[] }
 > = {
-  translate: {
-    title: 'Dịch thuật & Điều phối Pool AI',
-    phase: 'Phase 4',
-    description:
-      'Nhập raw EPUB/TXT/DOCX, chia chương thông minh, chạy MAP PHASE tóm tắt ngữ cảnh và dịch song song qua Multi-Key × Multi-Model Gemini Pool.',
-    highlights: [
-      'Hỗ trợ đầy đủ 3 chế độ LN-VN, Freeform/Aiko và Hybrid',
-      'Tự động che từ nhạy cảm (sensitive_masks) khi gặp safety block',
-      'Theo dõi tiến độ thời gian thực và chuyển đổi slot tự động',
-    ],
-  },
   proofread: {
     title: 'Hiệu đính & Xuất bản',
     phase: 'Phase 5',

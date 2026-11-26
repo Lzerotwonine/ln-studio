@@ -472,3 +472,163 @@ export interface RelationshipItem {
   is_missing_reverse: boolean
   last_updated_vol: number
 }
+
+// ---------- Phase 4: Translation Engine & Sensitive Masks ----------
+
+export type ChapterStatus =
+  | 'pending'
+  | 'summarized'
+  | 'translating'
+  | 'completed'
+  | 'failed'
+  | 'blocked'
+
+export const CHAPTER_STATUS_META: Record<
+  ChapterStatus,
+  { label: string; badgeClass: string }
+> = {
+  pending: {
+    label: 'Chờ dịch',
+    badgeClass:
+      'bg-slate-100 text-slate-700 dark:bg-zinc-800 dark:text-zinc-300',
+  },
+  summarized: {
+    label: 'Đã MAP',
+    badgeClass:
+      'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300',
+  },
+  translating: {
+    label: 'Đang dịch...',
+    badgeClass:
+      'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300 animate-pulse',
+  },
+  completed: {
+    label: 'Hoàn thành',
+    badgeClass:
+      'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
+  },
+  blocked: {
+    label: 'Bị chặn (Blocked)',
+    badgeClass:
+      'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300 font-semibold',
+  },
+  failed: {
+    label: 'Lỗi (Failed)',
+    badgeClass:
+      'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300',
+  },
+}
+
+export interface TranslateChapterRow {
+  id: number
+  volume_id: number
+  chapter_index: number
+  title: string
+  raw_chars: number
+  translated_chars: number
+  has_mask: boolean
+  status: ChapterStatus
+  used_slot: string | null
+  char_ratio: number
+  error_message: string | null
+  updated_at: string
+}
+
+export interface TranslateLogEvent {
+  type: string
+  ts?: string
+  level?: 'info' | 'warn' | 'error' | 'success'
+  message?: string
+  chapter_id?: number
+  chapter_index?: number
+  status?: ChapterStatus
+  char_ratio?: number
+  used_slot?: string | null
+  error_message?: string | null
+  state?: string
+  done_in_run?: number
+  total_targets?: number
+}
+
+export interface TranslateStatusResponse {
+  volume_id: number
+  series_id: number
+  job_state: string
+  total_targets: number
+  done_in_run: number
+  current_chapter_index: number | null
+  counts: {
+    total: number
+    pending: number
+    translating: number
+    completed: number
+    blocked: number
+    failed: number
+  }
+  chapters: TranslateChapterRow[]
+  recent_logs: TranslateLogEvent[]
+}
+
+export interface DebugContextResponse {
+  chapter_id: number
+  chapter_index: number
+  chapter_title: string
+  mode: string
+  using_masked_text: boolean
+  source_char_count: number
+  system_instruction_length: number
+  system_instruction_preview: string
+  user_prompt: string
+  rolling_context: string
+  matched_characters: Array<{
+    id: number
+    canonical_name: string
+    display_name: string
+    matched_aliases: string[]
+  }>
+  matched_relationships: Array<{
+    source_name: string
+    target_name: string
+    pair_pronoun: string
+  }>
+  matched_glossary: Array<{
+    source_term: string
+    vi_term: string
+    term_type: string
+  }>
+  ignored_shared_parts: string[]
+}
+
+export interface SensitiveMaskItem {
+  id: number
+  series_id: number | null
+  raw_phrase: string
+  safe_replacement: string
+  created_at: string
+}
+
+export interface SensitiveSuggestion {
+  raw_phrase: string
+  safe_replacement: string
+  reason: string
+}
+
+export interface SensitiveScanResponse {
+  chapter_id: number
+  series_id: number
+  suggestions: SensitiveSuggestion[]
+  existing_masks: SensitiveMaskItem[]
+  used_slot: string
+}
+
+export interface ApplyMasksResponse {
+  chapter_id: number
+  masked_raw_text: string | null
+  applied_count: number
+  applied_masks: Array<{
+    raw_phrase: string
+    safe_replacement: string
+    occurrences: number
+  }>
+  saved_masks_count: number
+}

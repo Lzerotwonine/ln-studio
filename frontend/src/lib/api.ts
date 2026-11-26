@@ -1,10 +1,12 @@
 import axios from 'axios'
 import type {
   ApiKeyItem,
+  ApplyMasksResponse,
   ChapterSummary,
   CharacterAppearance,
   CharacterWithState,
   ContinuityStatus,
+  DebugContextResponse,
   GlossaryExtractResponse,
   GlossaryImportResponse,
   GlossaryListResponse,
@@ -12,6 +14,7 @@ import type {
   GlossaryTerm,
   GlossaryTranslateResponse,
   HealthInfo,
+  HybridConfig,
   MapPhaseResponse,
   ModelConfig,
   PromptPreset,
@@ -19,9 +22,13 @@ import type {
   QuotaStatusResponse,
   ReducePhaseResponse,
   RelationshipItem,
+  SensitiveMaskItem,
+  SensitiveScanResponse,
   Series,
   SeriesPayload,
   SplitMode,
+  TranslateStatusResponse,
+  TranslationMode,
   Volume,
   VolumeImportResponse,
   VolumePayload,
@@ -566,4 +573,145 @@ export async function fetchContinuityXml(volumeId: number): Promise<string> {
 
 export function getContinuityXmlDownloadUrl(volumeId: number): string {
   return `${baseURL}/api/volumes/${volumeId}/continuity/xml?download=true`
+}
+
+// ---------- Phase 4: Translation Engine & Sensitive Masks ----------
+
+export async function fetchTranslateStatus(
+  volumeId: number,
+): Promise<TranslateStatusResponse> {
+  const { data } = await http.get<TranslateStatusResponse>(
+    `/api/volumes/${volumeId}/translate/status`,
+  )
+  return data
+}
+
+export async function startTranslationJob(
+  volumeId: number,
+  payload: {
+    start_chapter?: number | null
+    end_chapter?: number | null
+    chapter_ids?: number[] | null
+    mode?: TranslationMode
+    temperature?: number
+    hybrid_config?: HybridConfig
+    only_uncompleted?: boolean
+    only_failed_or_blocked?: boolean
+  },
+): Promise<TranslateStatusResponse> {
+  const { data } = await http.post<TranslateStatusResponse>(
+    `/api/volumes/${volumeId}/translate/start`,
+    payload,
+  )
+  return data
+}
+
+export async function pauseTranslationJob(
+  volumeId: number,
+): Promise<TranslateStatusResponse> {
+  const { data } = await http.post<TranslateStatusResponse>(
+    `/api/volumes/${volumeId}/translate/pause`,
+  )
+  return data
+}
+
+export async function resumeTranslationJob(
+  volumeId: number,
+): Promise<TranslateStatusResponse> {
+  const { data } = await http.post<TranslateStatusResponse>(
+    `/api/volumes/${volumeId}/translate/resume`,
+  )
+  return data
+}
+
+export async function stopTranslationJob(
+  volumeId: number,
+): Promise<TranslateStatusResponse> {
+  const { data } = await http.post<TranslateStatusResponse>(
+    `/api/volumes/${volumeId}/translate/stop`,
+  )
+  return data
+}
+
+export function getTranslateEventsUrl(volumeId: number): string {
+  return `${baseURL}/api/volumes/${volumeId}/translate/events`
+}
+
+export async function retranslateSingleChapter(
+  chapterId: number,
+  payload?: {
+    mode?: TranslationMode
+    temperature?: number
+    hybrid_config?: HybridConfig
+  },
+): Promise<{
+  chapter_id: number
+  chapter_index: number
+  status: string
+  used_slot: string | null
+  char_ratio: number
+  retried_with_fiction_context: boolean
+  error_message: string | null
+}> {
+  const { data } = await http.post(
+    `/api/chapters/${chapterId}/retranslate`,
+    payload ?? {},
+  )
+  return data
+}
+
+export async function fetchChapterDebugContext(
+  chapterId: number,
+  params?: {
+    mode?: TranslationMode
+    use_glossary?: boolean
+    use_characters?: boolean
+    use_relationships?: boolean
+    use_subarc?: boolean
+    rolling_context_lines?: number
+  },
+): Promise<DebugContextResponse> {
+  const { data } = await http.get<DebugContextResponse>(
+    `/api/chapters/${chapterId}/debug-context`,
+    { params },
+  )
+  return data
+}
+
+export async function fetchSensitiveMasks(
+  seriesId: number,
+): Promise<SensitiveMaskItem[]> {
+  const { data } = await http.get<SensitiveMaskItem[]>('/api/masks', {
+    params: { series_id: seriesId, include_global: true },
+  })
+  return data
+}
+
+export async function deleteSensitiveMask(maskId: number): Promise<void> {
+  await http.delete(`/api/masks/${maskId}`)
+}
+
+export async function scanChapterSensitive(
+  chapterId: number,
+): Promise<SensitiveScanResponse> {
+  const { data } = await http.post<SensitiveScanResponse>(
+    `/api/chapters/${chapterId}/scan-sensitive`,
+  )
+  return data
+}
+
+export async function applyChapterMasks(
+  chapterId: number,
+  payload: {
+    extra_masks: Array<{ raw_phrase: string; safe_replacement: string }>
+    save_to_db: boolean
+    scope: 'series' | 'global'
+    clear_mask?: boolean
+  },
+): Promise<ApplyMasksResponse> {
+  const { data } = await http.post<ApplyMasksResponse>(
+    `/api/chapters/${chapterId}/apply-masks`,
+    payload,
+  )
+  return data
 }

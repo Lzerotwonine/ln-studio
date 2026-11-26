@@ -584,3 +584,125 @@ class RelevantContextResponse(BaseModel):
     matched_relationships: list[dict]
     matched_glossary: list[dict]
     ignored_shared_parts: list[str]
+
+
+# ---------- Phase 4: Translation Engine & Sensitive Masks ----------
+
+class TranslateStartRequest(BaseModel):
+    start_chapter: int | None = Field(default=None, ge=1)
+    end_chapter: int | None = Field(default=None, ge=1)
+    chapter_ids: list[int] | None = None
+    mode: TranslationMode | None = None
+    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    hybrid_config: HybridConfig | None = None
+    system_prompt_override: str | None = None
+    only_uncompleted: bool = True
+    only_failed_or_blocked: bool = False
+
+
+class RetranslateChapterRequest(BaseModel):
+    mode: TranslationMode | None = None
+    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    hybrid_config: HybridConfig | None = None
+    system_prompt_override: str | None = None
+
+
+class TranslateChapterRow(BaseModel):
+    id: int
+    volume_id: int
+    chapter_index: int
+    title: str
+    raw_chars: int
+    translated_chars: int
+    has_mask: bool
+    status: str
+    used_slot: str | None = None
+    char_ratio: float
+    error_message: str | None = None
+    updated_at: str
+
+
+class TranslateStatusResponse(BaseModel):
+    volume_id: int
+    series_id: int
+    job_state: str
+    total_targets: int
+    done_in_run: int
+    current_chapter_index: int | None = None
+    counts: dict[str, int]
+    chapters: list[TranslateChapterRow]
+    recent_logs: list[dict]
+
+
+class SingleTranslateResultResponse(BaseModel):
+    chapter_id: int
+    chapter_index: int
+    status: str
+    used_slot: str | None = None
+    char_ratio: float
+    retried_with_fiction_context: bool
+    error_message: str | None = None
+
+
+class DebugContextResponse(BaseModel):
+    chapter_id: int
+    chapter_index: int
+    chapter_title: str
+    mode: str
+    using_masked_text: bool
+    source_char_count: int
+    system_instruction_length: int
+    system_instruction_preview: str
+    user_prompt: str
+    rolling_context: str
+    matched_characters: list[dict]
+    matched_relationships: list[dict]
+    matched_glossary: list[dict]
+    ignored_shared_parts: list[str]
+
+
+class SensitiveMaskCreate(BaseModel):
+    series_id: int | None = None
+    raw_phrase: str = Field(..., min_length=1, max_length=255)
+    safe_replacement: str = Field(..., min_length=1, max_length=255)
+
+
+class SensitiveMaskUpdate(BaseModel):
+    raw_phrase: str | None = Field(default=None, min_length=1, max_length=255)
+    safe_replacement: str | None = Field(default=None, min_length=1, max_length=255)
+
+
+class SensitiveMaskResponse(BaseModel):
+    id: int
+    series_id: int | None = None
+    raw_phrase: str
+    safe_replacement: str
+    created_at: str
+
+
+class SensitiveScanResponse(BaseModel):
+    chapter_id: int
+    series_id: int
+    suggestions: list[dict]
+    existing_masks: list[SensitiveMaskResponse]
+    used_slot: str
+
+
+class MaskPairItem(BaseModel):
+    raw_phrase: str
+    safe_replacement: str
+
+
+class ApplyMasksRequest(BaseModel):
+    extra_masks: list[MaskPairItem] = Field(default_factory=list)
+    save_to_db: bool = True
+    scope: Literal["series", "global"] = "series"
+    clear_mask: bool = False
+
+
+class ApplyMasksResponse(BaseModel):
+    chapter_id: int
+    masked_raw_text: str | None = None
+    applied_count: int
+    applied_masks: list[dict]
+    saved_masks_count: int

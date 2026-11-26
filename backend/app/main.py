@@ -14,9 +14,11 @@ from fastapi.staticfiles import StaticFiles
 from app.api.chapters import router as chapters_router
 from app.api.continuity import router as continuity_router
 from app.api.glossary import router as glossary_router
+from app.api.masks import router as masks_router
 from app.api.presets import router as presets_router
 from app.api.series import router as series_router
 from app.api.settings import router as settings_router
+from app.api.translate import router as translate_router
 from app.core.database import PROJECT_ROOT, db_session, get_db_path, init_db
 
 FRONTEND_DIST_DIR = PROJECT_ROOT / "frontend" / "dist"
@@ -70,6 +72,8 @@ def create_app(dist_dir: Path | None = None) -> FastAPI:
     app.include_router(chapters_router)
     app.include_router(glossary_router)
     app.include_router(continuity_router)
+    app.include_router(masks_router)
+    app.include_router(translate_router)
 
     # Auto-serve built frontend if frontend/dist exists
     resolved_dist = dist_dir if dist_dir is not None else FRONTEND_DIST_DIR

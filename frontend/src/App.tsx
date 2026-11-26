@@ -6,6 +6,7 @@ import { DashboardPage } from './pages/DashboardPage'
 import { GlossaryTab } from './pages/GlossaryTab'
 import { PlaceholderPage } from './pages/PlaceholderPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { TranslateTab } from './pages/TranslateTab'
 import type { NavSection, Series, Volume } from './types'
 
 export function App() {
@@ -92,11 +93,22 @@ export function App() {
           />
         )}
 
+        {activeSection === 'translate' && (
+          <TranslateTab
+            selectedSeries={selectedSeries}
+            selectedVolume={selectedVolume}
+            onSelectSeries={setSelectedSeries}
+            onSelectVolume={setSelectedVolume}
+            onBackToDashboard={() => setActiveSection('dashboard')}
+          />
+        )}
+
         {activeSection === 'settings' && <SettingsPage />}
 
         {activeSection !== 'dashboard' &&
           activeSection !== 'glossary' &&
           activeSection !== 'characters' &&
+          activeSection !== 'translate' &&
           activeSection !== 'settings' && (
             <PlaceholderPage
               section={activeSection}

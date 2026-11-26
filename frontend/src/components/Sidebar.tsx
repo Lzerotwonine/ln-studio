@@ -32,7 +32,7 @@ const NAV_ITEMS: Array<{
   { id: 'dashboard', label: 'Quản lý Truyện', icon: BookOpen },
   { id: 'glossary', label: 'Thuật ngữ', icon: BookMarked },
   { id: 'characters', label: 'Nhân vật & Xưng hô', icon: Users },
-  { id: 'translate', label: 'Dịch thuật', icon: Languages, phaseTag: 'P4' },
+  { id: 'translate', label: 'Dịch thuật', icon: Languages },
   { id: 'proofread', label: 'Hiệu đính', icon: CheckCheck, phaseTag: 'P5' },
   { id: 'settings', label: 'Cài đặt', icon: Settings },
 ]
