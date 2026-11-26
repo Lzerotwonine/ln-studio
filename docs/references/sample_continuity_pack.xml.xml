@@ -1,0 +1,373 @@
+<CONTINUITY_DATA_PACK version="1.0">
+  <META>
+    <SERIES>Mushoku Tensei: Jobless Reincarnation</SERIES>
+    <VOLUME_END>12</VOLUME_END>
+    <LAST_CHAPTER>31</LAST_CHAPTER>
+  </META>
+  
+  <SUB_ARC_STATE>
+    <CHAR name="Sylphiette" subarc="TSUNDERE" current_state="DERE" notes="Đã sinh con gái đầu lòng (Lucy), thấu hiểu, bao dung và chính thức chấp nhận Roxy làm vợ thứ hai của Rudeus." />
+    <CHAR name="Norn Greyrat" subarc="TSUNDERE" current_state="DERE" notes="Đã vượt qua cú sốc về cái chết của cha, hòa giải với anh trai Rudeus và ngỏ ý muốn học kiếm thuật." />
+    <CHAR name="Aisha Greyrat" subarc="TSUNDERE" current_state="DERE" notes="Tiếp tục quản lý nhà cửa, hỗ trợ Lilia chăm sóc gia đình và giải tỏa được khúc mắc cảm xúc với mẹ." />
+    <CHAR name="Roxy Migurdia" subarc="TSUNDERE" current_state="DERE" notes="Đã được giải cứu khỏi mê cung, trở thành giảng viên Đại học Ma thuật và chính thức trở thành vợ thứ hai của Rudeus." />
+  </SUB_ARC_STATE>
+  
+  <ROSTER>
+    <CHAR name="ルーデウス・グレイラット" romaji="Rudeus Greyrat" aliases="泥沼のルーデウス|ルーデウス|ルディ" archetype="NORMAL" pair="Tôi-Cậu" rtas_baseline="3.8" appearance="ACTUAL" />
+    <CHAR name="シルフィエット" romaji="Sylphiette" aliases="シルフ|シルフィ|シルフィエット・グレイラット" archetype="KUUDERE" pair="Em-Anh" rtas_baseline="5.0" appearance="ACTUAL" />
+    <CHAR name="ロキシー・ミグルディア" romaji="Roxy Migurdia" aliases="ロキシ|ロキシー・ミグルディア" archetype="ONEE" pair="Tôi-Cậu" rtas_baseline="4.8" appearance="ACTUAL" />
+    <CHAR name="ノルン・グレイラット" romaji="Norn Greyrat" aliases="ノルン" archetype="NORMAL" pair="Em-Anh" rtas_baseline="3.5" appearance="ACTUAL" />
+    <CHAR name="アイシャ・グレイラット" romaji="Aisha Greyrat" aliases="アイシャ" archetype="GYARU" pair="Em-Anh" rtas_baseline="4.0" appearance="ACTUAL" />
+    <CHAR name="ゼニス" romaji="Zenith" aliases="ゼニス・グレイラット" archetype="NORMAL" pair="Mẹ-Con" rtas_baseline="4.0" appearance="ACTUAL" />
+    <CHAR name="リーリャ" romaji="Lilia" aliases="" archetype="SAMURAI" pair="Tôi-Cậu chủ/Ông chủ" rtas_baseline="4.0" appearance="ACTUAL" />
+    <CHAR name="エリナリーゼ・ドラゴンロード" romaji="Elinalise Dragonroad" aliases="エリナリーゼ" archetype="ONEE" pair="Cô-Cháu" rtas_baseline="4.0" appearance="ACTUAL" />
+    <CHAR name="ザノバ・シーローン" romaji="Zanoba Shirone" aliases="ザノバ|『首取り王子』ザノバ・シーローン" archetype="CHUUNI" pair="Ta-Cậu" rtas_baseline="4.5" appearance="MENTIONED" />
+    <CHAR name="クリフ・グリモル" romaji="Cliff Grimoire" aliases="クリフ" archetype="NORMAL" pair="Tôi-Cậu" rtas_baseline="4.0" appearance="MENTIONED" />
+    <CHAR name="ナナホシ・シズカ" romaji="Nanahoshi Shizuka" aliases="サイレント・セブンスター|ナナホシ|七星静香" archetype="KUUDERE" pair="Tôi-Cậu" rtas_baseline="3.5" appearance="MENTIONED" />
+    <CHAR name="ギース" romaji="Geese" aliases="" archetype="NORMAL" pair="Tôi-Cậu" rtas_baseline="3.5" appearance="ACTUAL" />
+    <CHAR name="タルハンド" romaji="Talhand" aliases="" archetype="SAMURAI" pair="Tôi-Cậu" rtas_baseline="4.0" appearance="ACTUAL" />
+    <CHAR name="パウロ・グレイラット" romaji="Paul Greyrat" aliases="パウロ|パウロ団長" archetype="NORMAL" pair="Cha-Con" rtas_baseline="4.5" appearance="ACTUAL" />
+    <CHAR name="ルーシー・グレイラット" romaji="Lucie Greyrat" aliases="ルーシィ" archetype="NORMAL" pair="Con-Cha" rtas_baseline="5.0" appearance="MENTIONED" />
+  </ROSTER>
+  
+  <RELATIONSHIPS>
+    <PAIR source="Rudeus" target="Sylphiette" rtas="5.0" pair="Anh-Em" notes="Vợ chồng gắn kết sâu sắc, Sylphiette sinh con gái đầu lòng (Lucy) và bao dung chấp nhận Roxy làm vợ thứ hai." />
+    <PAIR source="Rudeus" target="Roxy" rtas="4.9" pair="Em-Sư phụ" notes="Từ thầy trò trở thành người tri kỷ, trải qua sinh tử và chính thức kết hôn, trở thành vợ thứ hai của Rudeus." />
+    <PAIR source="Rudeus" target="Norn" rtas="3.8" pair="Anh-Em" notes="Đã vượt qua hiểu lầm về cái chết của cha, Norn dần mở lòng và xin Rudeus dạy kiếm thuật." />
+    <PAIR source="Rudeus" target="Aisha" rtas="4.0" pair="Anh-Em" notes="Gắn bó, Aisha hỗ trợ đắc lực việc gia đình và chăm sóc các thành viên." />
+    <PAIR source="Rudeus" target="Geese" rtas="4.0" pair="Tôi-Cậu" notes="Quan hệ tiền bối lính mới, dù chỉ gặp nhau ít lâu nhưng đã trở nên thân thiết" />
+    <PAIR source="Rudeus" target="Zenith" rtas="4.5" pair="Con-Mẹ" notes="Giải cứu thành công nhưng Zenith đã bị tổn thương não bộ, mất trí nhớ và phế nhân; Rudeus và gia đình quyết định chăm sóc chu đáo." />
+    <PAIR source="Rudeus" target="Paul" rtas="4.5" pair="Con-Cha" notes="Giải cứu thành công nhưng Zenith đã bị tổn thương não bộ, mất trí nhớ và phế nhân; Rudeus và gia đình quyết định chăm sóc chu đáo." />
+    <PAIR source="Rudeus" target="Talhand" rtas="3.5" pair="Cháu-Bác" notes="Gặp nhau trong nhiệm vụ giải cứu Zenith, hỗ trợ chỉ dạy Rudeus phương pháp tấn công trong Mê cung Dịch chuyển" />
+    <PAIR source="Talhand" target="Rudeus" rtas="4.0" pair="Ta-Nhóc" notes="Là bạn đồng hành cùng Paul năm xưa. Gặp nhau trong nhiệm vụ giải cứu Zenith, hỗ trợ chỉ dạy Rudeus phương pháp tấn công trong Mê cung Dịch chuyển; Có cảm tình vì sự nhanh nhạy và thông minh của cậu" />
+    <PAIR source="Geese" target="Rudeus" rtas="4.0" pair="Tôi-Cậu" notes="Quan hệ tiền bối lính mới, dù chỉ gặp nhau ít lâu nhưng đã trở nên thân thiết" />
+    <PAIR source="Geese" target="Elinalise" rtas="4.0" pair="Tôi-Cô" notes="Từng là đồng hữu cùng chung tổ đội với nhau nhưng rồi tách ra, đến khi tham gia việc giải cứu Zenith mới gặp lại" />
+    <PAIR source="Geese" target="Paul" rtas="4.5" pair="Tôi-Cậu" notes="Tôn trọng, từng là đồng đội cũng như giúp đỡ tham gia việc giải cứu Zenith" />
+    <PAIR source="Sylphiette" target="Roxy" rtas="4.5" pair="Em-Chị" notes="Bao dung, thấu hiểu và kết nghĩa chị em, cùng nhau xây dựng gia đình chung chồng." />
+    <PAIR source="Lilia" target="Zenith" rtas="4.5" pair="Tôi-Chị" notes="Trung thành tuyệt đối, tận tụy chăm sóc Zenith sau khi được giải cứu." />
+    <PAIR source="Lilia" target="Rudeus" rtas="4.5" pair="Tôi-Cậu chủ/Cậu" notes="Tôn trọng, tin tưởng tuyệt đối Rudeus vì năm xưa đã từng cứu giúp cô" />
+    <PAIR source="Lilia" target="Paul" rtas="4.5" pair="Tôi-Ông chủ/Anh" notes="Tôn trọng, tin tưởng tuyệt đối Rudeus vì năm xưa đã từng cứu giúp cô" />
+    <PAIR source="Paul" target="Geese" rtas="4.5" pair="Tôi-Cậu" notes="Tôn trọng, từng là đồng đội" />
+    <PAIR source="Paul" target="Lilia" rtas="4.8" pair="Anh-Em" notes="Đồng hành cùng nhau trên hành trình đến nơi Zenith bị giam cầm, dù không đi cùng trong chuyến thám hiểm nhưng là hậu phương vững chắc" />
+    <PAIR source="Paul" target="Rudeus" rtas="4.5" pair="Cha-Con" notes="Cha con, dù từng có xích mích trong quá khứ nhưng đã hòa giải, từ đó thân thiết và tôn trọng nhau hơn. Paul còn tự hào vì có người con giỏi giang, thông minh" />
+    <PAIR source="Talhand" target="Roxy" rtas="4.0" pair="Ta-Cô" notes="Là bạn đồng hành trong nhiệm vụ giải cứu Zenith." />
+    <PAIR source="Roxy" target="Talhand" rtas="4.0" pair="Tôi-Bác" notes="Là bạn đồng hành trong nhiệm vụ giải cứu Zenith." />
+    <PAIR source="Roxy" target="Rudeus" rtas="4.0" pair="Tôi-Em" notes="Từ thầy trò trở thành người tri kỷ, trải qua sinh tử và chính thức kết hôn, trở thành vợ thứ hai của Rudeus." />
+    <PAIR source="Roxy" target="Sylphiette" rtas="4.5" pair="Chị-Em" notes="Bao dung, thấu hiểu và kết nghĩa chị em, cùng nhau xây dựng gia đình chung chồng." />
+    <PAIR source="Roxy" target="Zenith" rtas="4.5" pair="Tôi-Chị" notes="Biết ơn, có cảm tình vì năm xưa hai vợ chồng đã giúp đỡ cô ăn ở, quan tâm đến cô." />
+    <PAIR source="Roxy" target="Paul" rtas="4.5" pair="Tôi-Anh" notes="Biết ơn, có cảm tình vì năm xưa hai vợ chồng đã giúp đỡ cô ăn ở, quan tâm đến cô." />
+  </RELATIONSHIPS>
+  
+  <GLOSSARY>
+<TERM jp="消費魔力" vn="ma lực tiêu hao" romaji="shouhi maryoku" type="Concept" />
+<TERM jp="無詠唱" vn="không niệm chú/vô niệm" romaji="mueishou" type="Skill" />
+<TERM jp="発動" vn="phát động" romaji="hatudou" type="Skill" />
+<TERM jp="設定" vn="thiết lập" romaji="settei" type="Concept" />
+<TERM jp="詠唱" vn="niệm chú" romaji="eishou" type="Skill" />
+<TERM jp="闘気" vn="Đấu Khí" romaji="touki" type="Skill" />
+<TERM jp="魔力" vn="ma lực" romaji="maryoku" type="Concept" />
+<TERM jp="魔力総量" vn="tổng lượng ma lực" romaji="maryoku souryou" type="Concept" />
+<TERM jp="魔眼" vn="ma nhãn" romaji="magan" type="Skill" />
+<TERM jp="魔神語" vn="Ma Thần Ngữ" romaji="mashingo" type="Language" />
+<TERM jp="魔力濃度" vn="nồng độ ma lực" romaji="maryoku noudo" type="Concept" />
+<TERM jp="化け物" vn="quái vật" romaji="bakemono" type="Creature" />
+<TERM jp="ヒーリング" vn="Healing" romaji="heeringu" type="Skill" />
+<TERM jp="ファイアボール" vn="Fireball" romaji="faiabooru" type="Skill" />
+<TERM jp="上級魔術" vn="ma thuật Thượng cấp" romaji="joukyuu majutsu" type="Skill" />
+<TERM jp="中級魔術" vn="ma thuật Trung cấp" romaji="chuukyuu majutsu" type="Skill" />
+<TERM jp="剣術" vn="kiếm thuật" romaji="kenjutsu" type="Skill" />
+<TERM jp="召喚" vn="triệu hồi" romaji="shoukan" type="Skill" />
+<TERM jp="土砦" vn="Pháo Đài Đất" romaji="do砦" type="Skill" />
+<TERM jp="岩砲弾" vn="Nham Pháo Đạn" romaji="gan houdan" type="Skill" />
+<TERM jp="技術" vn="kỹ thuật" romaji="gijutsu" type="Skill" />
+<TERM jp="攻撃魔術" vn="ma thuật tấn công" romaji="kougeki majutsu" type="Skill" />
+<TERM jp="水魔術" vn="Thủy ma thuật" romaji="sui majutsu" type="Skill" />
+<TERM jp="氷刃" vn="Băng Nhận" romaji="hyoujin" type="Skill" />
+<TERM jp="氷結領域" vn="Băng Kết Lĩnh Vực" romaji="hyouketsu ryouiki" type="Skill" />
+<TERM jp="治療" vn="trị liệu" romaji="chiryou" type="Skill" />
+<TERM jp="治癒魔術" vn="ma thuật Trị liệu" romaji="chiyu majutsu" type="Skill" />
+<TERM jp="混合魔術" vn="ma thuật hỗn hợp" romaji="kongou majutsu" type="Skill" />
+<TERM jp="火球" vn="Hỏa Cầu" romaji="kakyuu" type="Skill" />
+<TERM jp="神撃" vn="thần kích" romaji="shingeki" type="Skill" />
+<TERM jp="解毒魔術" vn="ma thuật Giải độc" romaji="gedoku majutsu" type="Skill" />
+<TERM jp="転移" vn="dịch chuyển" romaji="ten'i" type="Skill" />
+<TERM jp="魔法" vn="ma pháp" romaji="mahou" type="Skill" />
+<TERM jp="魔法陣" vn="ma pháp trận" romaji="mahoujin" type="Skill" />
+<TERM jp="魔術" vn="ma thuật" romaji="majutsu" type="Skill" />
+<TERM jp="転移魔法陣" vn="ma pháp trận dịch chuyển" romaji="ten'i mahoujin" type="Skill" />
+<TERM jp="ストーンキャノン" vn="Stone Cannon" romaji="sutoon kyanon" type="Skill" />
+<TERM jp="魔力眼" vn="Ma Lực Nhãn" romaji="maryokugan" type="Skill" />
+<TERM jp="無詠唱魔術" vn="ma thuật vô niệm" romaji="mueishou majutsu" type="Skill" />
+<TERM jp="火魔術" vn="Hỏa ma thuật" romaji="hi majutsu" type="Skill" />
+<TERM jp="泥沼" vn="Đầm Lầy" romaji="doronuma" type="Place" />
+<TERM jp="氷霜撃" vn="Băng Sương Kích" romaji="hyousougeki" type="Skill" />
+<TERM jp="岩弾" vn="Nham Đạn" romaji="gan dan" type="Skill" />
+<TERM jp="予見眼" vn="Dự Kiến Nhãn" romaji="yokengan" type="Skill" />
+<TERM jp="上級水魔術" vn="Thủy ma thuật Thượng cấp" romaji="joukyuu sui majutsu" type="Skill" />
+<TERM jp="範囲魔術" vn="ma thuật diện rộng" romaji="hani majutsu" type="Skill" />
+<TERM jp="火断" vn="Hỏa Đoạn" romaji="ka dan" type="Skill" />
+<TERM jp="フレイムスライス" vn="Flame Slice" romaji="fureimu suraisu" type="Skill" />
+<TERM jp="火炎放射（フレイムスロワー）" vn="Hỏa Viêm Phóng Xạ (Flamethrower)" romaji="kaen housha (fureimu surowaa)" type="Skill" />
+<TERM jp="フレイムスロワー" vn="Flamethrower" romaji="fureimu surowaa" type="Skill" />
+<TERM jp="火断（フレイムスライス）" vn="Hỏa Đoạn (Flame Slice)" romaji="ka dan (fureimu suraisu)" type="Skill" />
+<TERM jp="火炎放射" vn="Hỏa Viêm Phóng Xạ" romaji="kaen housha" type="Skill" />
+<TERM jp="氷槍吹雪" vn="Bão Tuyết Giáo Băng" romaji="hyousou fubuki" type="Skill" />
+<TERM jp="ブリザードストーム" vn="Blizzard Storm" romaji="burizaado sutoomu" type="Skill" />
+<TERM jp="氷槍吹雪（ブリザードストーム）" vn="Bão Tuyết Giáo Băng (Blizzard Storm)" romaji="hyousou fubuki (burizaado sutoomu)" type="Skill" />
+<TERM jp="濃霧" vn="Sương Mù" romaji="noumu" type="Concept" />
+<TERM jp="転移罠" vn="bẫy dịch chuyển" romaji="ten'i wana" type="Item" />
+<TERM jp="攻撃魔術師" vn="công kích ma thuật sư" romaji="kougeki majutsushi" type="Character" />
+<TERM jp="詠唱魔術" vn="ma thuật niệm chú" romaji="eishou majutsu" type="Skill" />
+<TERM jp="アタッカー" vn="Attacker" romaji="atakkaa" type="Character" />
+<TERM jp="サブタンク" vn="Sub-tanker" romaji="sabutanku" type="Character" />
+<TERM jp="タンク" vn="tanker" romaji="tanku" type="Character" />
+<TERM jp="ヒーラー" vn="healer" romaji="heerarii" type="Character" />
+<TERM jp="ミリス" vn="Millis" romaji="mirisu" type="Entity" />
+<TERM jp="ミリス教" vn="Millis Giáo" romaji="mirisu kyou" type="Organization" />
+<TERM jp="ミリス教団" vn="Giáo Đoàn Millis" romaji="mirisu kyoudan" type="Organization" />
+<TERM jp="下僕" vn="thuộc hạ" romaji="geboku" type="Character" />
+<TERM jp="侍女" vn="thị nữ" romaji="jijo" type="Character" />
+<TERM jp="傭兵" vn="lính đánh thuê" romaji="youhei" type="Character" />
+<TERM jp="先輩" vn="tiền bối" romaji="senpai" type="Title" />
+<TERM jp="冒険者" vn="mạo hiểm giả" romaji="boukensha" type="Character" />
+<TERM jp="剣士" vn="kiếm sĩ" romaji="kenshi" type="Character" />
+<TERM jp="剣神" vn="Kiếm Thần" romaji="kenshin" type="Title" />
+<TERM jp="北神" vn="Bắc Thần" romaji="hokushin" type="Title" />
+<TERM jp="商人" vn="thương nhân" romaji="shounin" type="Character" />
+<TERM jp="大英雄" vn="đại anh hùng" romaji="dai eiyuu" type="Character" />
+<TERM jp="女神" vn="Nữ thần" romaji="megami" type="Title" />
+<TERM jp="師匠" vn="sư phụ" romaji="shishou" type="Title" />
+<TERM jp="弟子" vn="đệ tử" romaji="deshi" type="Character" />
+<TERM jp="戦士" vn="chiến sĩ" romaji="senshi" type="Character" />
+<TERM jp="教団" vn="giáo đoàn" romaji="kyoudan" type="Organization" />
+<TERM jp="教徒" vn="tín đồ" romaji="kyouto" type="Character" />
+<TERM jp="水神" vn="Thủy Thần" romaji="suijin" type="Title" />
+<TERM jp="水聖" vn="Thủy Thánh" romaji="suisei" type="Title" />
+<TERM jp="治癒術師" vn="trị liệu thuật sư" romaji="chiyu jutsu-shi" type="Character" />
+<TERM jp="王子" vn="hoàng tử" romaji="ouji" type="Title" />
+<TERM jp="英雄" vn="anh hùng" romaji="eiyuu" type="Character" />
+<TERM jp="パウロ団長" vn="Đoàn trưởng Paul" romaji="pauro danchou" type="Character" />
+<TERM jp="団長" vn="đoàn trưởng" romaji="danchou" type="Title" />
+<TERM jp="魔法使" vn="ma pháp sư" romaji="mahou tsukai" type="Character" />
+<TERM jp="魔王" vn="Ma Vương" romaji="maou" type="Title" />
+<TERM jp="不死身の魔王" vn="Ma Vương Bất Hoại" romaji="fujimi no maou" type="Title" />
+<TERM jp="魔術師" vn="ma thuật sư" romaji="majutsushi" type="Character" />
+<TERM jp="冒険家" vn="nhà thám hiểm" romaji="boukenka" type="Character" />
+<TERM jp="聖獣" vn="Thánh Thú" romaji="seijuu" type="Creature" />
+<TERM jp="水王級魔術師" vn="Thủy Vương cấp ma thuật sư" romaji="suiou-kyuu majutsushi" type="Character" />
+<TERM jp="新入り" vn="lính mới" romaji="shin'iri" type="Character" />
+<TERM jp="魔法戦士" vn="ma pháp chiến sĩ" romaji="mahou senshi" type="Character" />
+<TERM jp="教頭" vn="Hiệu phó" romaji="kyoutou" type="Title" />
+<TERM jp="エルフ" vn="Elf" romaji="erufu" type="Race" />
+<TERM jp="クラン" vn="bang hội" romaji="kuran" type="Organization" />
+<TERM jp="ゴースト" vn="ma" romaji="goosuto" type="Creature" />
+<TERM jp="ドルディア" vn="Doldia" romaji="dorudia" type="Race" />
+<TERM jp="ドワーフ" vn="Dwarf" romaji="dowafu" type="Race" />
+<TERM jp="ミグルド" vn="Migurd" romaji="migurudo" type="Race" />
+<TERM jp="リザード" vn="thằn lằn" romaji="rizaado" type="Creature" />
+<TERM jp="人族" vn="Nhân Tộc" romaji="jinzoku" type="Race" />
+<TERM jp="人神" vn="Nhân Thần" romaji="hitogami" type="Entity" />
+<TERM jp="悪魔" vn="ác ma" romaji="akuma" type="Creature" />
+<TERM jp="炭鉱族" vn="Than Khoáng Tộc" romaji="tankouzoku" type="Race" />
+<TERM jp="獣族" vn="Thú Tộc" romaji="juuzoku" type="Race" />
+<TERM jp="精霊" vn="tinh linh" romaji="seirei" type="Creature" />
+<TERM jp="赤竜" vn="Xích Long" romaji="sekiryuu" type="Creature" />
+<TERM jp="長耳族" vn="Trường Nhĩ Tộc" romaji="choujizoku" type="Race" />
+<TERM jp="魔族" vn="Ma Tộc" romaji="mazoku" type="Race" />
+<TERM jp="魔物" vn="ma vật" romaji="mamono" type="Creature" />
+<TERM jp="魔獣" vn="ma thú" romaji="majuu" type="Creature" />
+<TERM jp="魔神" vn="Ma Thần" romaji="mashin" type="Title" />
+<TERM jp="冒険者ギルド" vn="Hội Mạo Hiểm Giả" romaji="boukensha girudo" type="Organization" />
+<TERM jp="サキュバス" vn="Succubus" romaji="sakyubasu" type="Creature" />
+<TERM jp="迷宮都市" vn="thành phố mê cung" romaji="meikyuu toshi" type="Place" />
+<TERM jp="スケルトン" vn="Skeleton" romaji="sukeruton" type="Creature" />
+<TERM jp="リウム" vn="Rium" romaji="riumu" type="Place" />
+<TERM jp="アスラ" vn="Asura" romaji="asura" type="Place" />
+<TERM jp="ミリス大陸" vn="Đại Lục Millis" romaji="mirisu tairiku" type="Place" />
+<TERM jp="アスラ王国" vn="Vương quốc Asura" romaji="asura oukoku" type="Place" />
+<TERM jp="ギルド" vn="Hội" romaji="girudo" type="Organization" />
+<TERM jp="シーローン" vn="Shirone" romaji="shiiron" type="Place" />
+<TERM jp="シーローン王国" vn="Vương quốc Shirone" romaji="shiiron oukoku" type="Place" />
+<TERM jp="ブエナ" vn="Buena" romaji="buena" type="Place" />
+<TERM jp="ブエナ村" vn="Làng Buena" romaji="buena mura" type="Place" />
+<TERM jp="ベガリット" vn="Begaritt" romaji="begaritto" type="Place" />
+<TERM jp="ミリシオン" vn="Millishion" romaji="mirishion" type="Place" />
+<TERM jp="ミリス神聖国" vn="Thần Thánh Quốc Millis" romaji="mirisu shinseikoku" type="Place" />
+<TERM jp="ラノア" vn="Ranoa" romaji="ranoa" type="Place" />
+<TERM jp="ラノア王国" vn="Vương quốc Ranoa" romaji="ranoa oukoku" type="Place" />
+<TERM jp="中央大陸" vn="Đại Lục Trung Tâm" romaji="chuuou tairiku" type="Place" />
+<TERM jp="大学" vn="đại học" romaji="daigaku" type="Place" />
+<TERM jp="娼館" vn="nhà thổ" romaji="shoukan" type="Place" />
+<TERM jp="王国" vn="vương quốc" romaji="oukoku" type="Place" />
+<TERM jp="王都" vn="vương đô" romaji="outo" type="Place" />
+<TERM jp="神聖国" vn="Thần Thánh Quốc" romaji="shinseikoku" type="Place" />
+<TERM jp="迷宮" vn="mê cung" romaji="meikyuu" type="Place" />
+<TERM jp="都市" vn="thành phố" romaji="toshi" type="Place" />
+<TERM jp="魔大陸" vn="Ma Đại Lục" romaji="ma tairiku" type="Place" />
+<TERM jp="魔法大学" vn="Đại học Ma pháp" romaji="mahou daigaku" type="Place" />
+<TERM jp="巣窟" vn="hang ổ" romaji="soukutsu" type="Place" />
+<TERM jp="北方大地" vn="Vùng đất phương Bắc" romaji="houpou daichi" type="Place" />
+<TERM jp="教会" vn="giáo hội" romaji="kyoukai" type="Organization" />
+<TERM jp="迷宮都市ラパン" vn="Thành phố Mê cung Rapan" romaji="meikyuu toshi rapan" type="Place" />
+<TERM jp="魔法都市シャリーア" vn="Thành phố Ma pháp Sharia" romaji="mahou toshi sharia" type="Place" />
+<TERM jp="マジックアイテム" vn="magic item" romaji="majikku aitemu" type="Item" />
+<TERM jp="教科書" vn="sách giáo khoa" romaji="kyoukasho" type="Item" />
+<TERM jp="杖" vn="trượng" romaji="tsue" type="Item" />
+<TERM jp="世界を歩く" vn="Du ngoạn Thế giới" romaji="sekai o aruku" type="Event" />
+<TERM jp="短剣" vn="dao găm" romaji="tanken" type="Item" />
+<TERM jp="魔力付与品" vn="vật phẩm yểm ma lực" romaji="maryoku fuyo-hin" type="Item" />
+<TERM jp="魔力結晶" vn="tinh thể ma lực" romaji="maryoku kesshou" type="Item" />
+<TERM jp="魔石" vn="ma thạch" romaji="maseki" type="Item" />
+<TERM jp="魔道具" vn="ma đạo cụ" romaji="madougu" type="Item" />
+<TERM jp="エストック" vn="estoc" romaji="esutokku" type="Item" />
+<TERM jp="ビキニアーマー" vn="giáp bikini" romaji="bikini aamaa" type="Item" />
+<TERM jp="ビキニ" vn="bikini" romaji="bikini" type="Item" />
+<TERM jp="魔剣" vn="ma kiếm" romaji="maken" type="Item" />
+<TERM jp="御神体" vn="Thánh Vật" romaji="goshintai" type="Item" />
+<TERM jp="転移の迷宮探索記" vn="Ký sự Thám hiểm Mê cung Dịch chuyển" romaji="ten'i no meikyuu tansaku-ki" type="Item" />
+<TERM jp="上級" vn="Thượng cấp" romaji="joukyuu" type="Rank" />
+<TERM jp="中級" vn="Trung cấp" romaji="chuukyuu" type="Rank" />
+<TERM jp="初級" vn="Sơ cấp" romaji="shokyuu" type="Rank" />
+<TERM jp="剣神流" vn="Phái Kiếm Thần" romaji="kenshin-ryuu" type="Skill" />
+<TERM jp="帝級" vn="Đế cấp" romaji="teikyuu" type="Rank" />
+<TERM jp="水王級" vn="Thủy Vương cấp" romaji="suiou-kyuu" type="Rank" />
+<TERM jp="水神流" vn="Phái Thủy Thần" romaji="suijin-ryuu" type="Skill" />
+<TERM jp="水聖級" vn="Thủy Thánh cấp" romaji="suisei-kyuu" type="Rank" />
+<TERM jp="決戦" vn="quyết chiến" romaji="kessen" type="Event" />
+<TERM jp="火系" vn="hệ Hỏa" romaji="hi-kei" type="Skill" />
+<TERM jp="王級" vn="Vương cấp" romaji="oukyuu" type="Rank" />
+<TERM jp="神級" vn="Thần cấp" romaji="shinkyuu" type="Rank" />
+<TERM jp="聖級" vn="Thánh cấp" romaji="seikyuu" type="Rank" />
+<TERM jp="新人" vn="tân binh" romaji="shinjin" type="Character" />
+<TERM jp="ニート" vn="NEET" romaji="niito" type="Character" />
+<TERM jp="ロリ" vn="loli" romaji="rori" type="Concept" />
+<TERM jp="人魔大戦" vn="Đại chiến Nhân - Ma" romaji="jinma taisen" type="Event" />
+<TERM jp="技" vn="chiêu thức" romaji="waza" type="Skill" />
+<TERM jp="転移事件" vn="sự cố dịch chuyển" romaji="ten'i jiken" type="Event" />
+<TERM jp="第二次人魔大戦" vn="Đại chiến Nhân - Ma lần thứ hai" romaji="dainiji jinma taisen" type="Event" />
+<TERM jp="アイシャ" vn="Aisha" romaji="aisha" type="Character" />
+<TERM jp="エリス" vn="Eris" romaji="erisu" type="Character" />
+<TERM jp="エリナリーゼ" vn="Elinalise" romaji="erinariize" type="Character" />
+<TERM jp="キシリカ" vn="Kishirika" romaji="kishirika" type="Character" />
+<TERM jp="グレイラット" vn="Greyrat" romaji="gureiratto" type="Character" />
+<TERM jp="シルフ" vn="Sylph" romaji="shirufu" type="Character" />
+<TERM jp="シルフィ" vn="Sylphie" romaji="shirufi" type="Character" />
+<TERM jp="シルフィエット" vn="Sylphiette" romaji="shirufietto" type="Character" />
+<TERM jp="ゼニス" vn="Zenith" romaji="zenisu" type="Character" />
+<TERM jp="ノルン" vn="Norn" romaji="norun" type="Character" />
+<TERM jp="パウロ" vn="Paul" romaji="pauro" type="Character" />
+<TERM jp="パウロ・グレイラット" vn="Paul Greyrat" romaji="pauro gureiratto" type="Character" />
+<TERM jp="ペルギウス" vn="Perugius" romaji="perugiusu" type="Character" />
+<TERM jp="リーリャ" vn="Lilia" romaji="ririya" type="Character" />
+<TERM jp="ルーデウス" vn="Rudeus" romaji="ruudeusu" type="Character" />
+<TERM jp="ルーデウス・グレイラット" vn="Rudeus Greyrat" romaji="ruudeusu gureiratto" type="Character" />
+<TERM jp="ルディ" vn="Rudy" romaji="rudi" type="Character" />
+<TERM jp="ロールズ" vn="Laws" romaji="rooruzu" type="Character" />
+<TERM jp="ロキシ" vn="Roxy" romaji="rokishi" type="Character" />
+<TERM jp="ロキシー・ミグルディア" vn="Roxy Migurdia" romaji="rokishii migurudia" type="Character" />
+<TERM jp="ルーク" vn="Luke" romaji="ruuku" type="Character" />
+<TERM jp="ルイジェルド" vn="Ruijerd" romaji="ruijerudo" type="Character" />
+<TERM jp="ミグルディア" vn="Migurdia" romaji="migurudia" type="Character" />
+<TERM jp="ブラッディーカント" vn="Bloody Kant" romaji="buraddii kanto" type="Character" />
+<TERM jp="バーディガーディ" vn="Badigadi" romaji="baadigadi" type="Character" />
+<TERM jp="カールマン" vn="Kalman" romaji="kaaruman" type="Character" />
+<TERM jp="アリエル" vn="Ariel" romaji="arieru" type="Character" />
+<TERM jp="フィッツ" vn="Fitz" romaji="fittsu" type="Character" />
+<TERM jp="タルハンド" vn="Talhand" romaji="taruhando" type="Character" />
+<TERM jp="ギース" vn="Geese" romaji="giisu" type="Character" />
+<TERM jp="クリフ" vn="Cliff" romaji="kurifu" type="Character" />
+<TERM jp="ナナホシ" vn="Nanahoshi" romaji="nanahoshi" type="Character" />
+<TERM jp="シェラ" vn="Shierra" romaji="shiera" type="Character" />
+<TERM jp="ヴェラ" vn="Vierra" romaji="viera" type="Character" />
+<TERM jp="ゾルダート" vn="Soldat" romaji="zorudaato" type="Character" />
+<TERM jp="リニア" vn="Linia" romaji="rinia" type="Character" />
+<TERM jp="プルセナ" vn="Pursena" romaji="purusena" type="Character" />
+<TERM jp="シャリーア" vn="Sharia" romaji="sharia" type="Place" />
+<TERM jp="治癒" vn="chữa lành" romaji="chiyu" type="Skill" />
+<TERM jp="土魔術" vn="Thổ ma thuật" romaji="tsuchi majutsu" type="Skill" />
+<TERM jp="魔力付与品（マジックアイテム）" vn="vật phẩm yểm ma lực (magic item)" romaji="maryoku fuyo-hin (majikku aitemu)" type="Item" />
+<TERM jp="氷結領域（アイシクルフィールド）" vn="Băng Kết Lĩnh Vực (Icicle Field)" romaji="hyouketsu ryouiki (aikushikuru feirudo)" type="Skill" />
+<TERM jp="アイシクルフィールド" vn="Icicle Field" romaji="aishikuru feirudo" type="Skill" />
+<TERM jp="アイススマッシュ" vn="Ice Smash" romaji="aisu sumasshu" type="Skill" />
+<TERM jp="岩砲弾（ストーンキャノン）" vn="Nham Pháo Đạn (Stone Cannon)" romaji="gan houdan (sutoon kyanon)" type="Skill" />
+<TERM jp="土砦（アースフォートレス）" vn="Pháo Đài Đất (Earth Fortress)" romaji="do砦 (aasu fuotoresu)" type="Skill" />
+<TERM jp="アースフォートレス" vn="Earth Fortress" romaji="aasu fuotoresu" type="Skill" />
+<TERM jp="神" vn="Thần" romaji="kami" type="Title" />
+<TERM jp="ベガリット大陸" vn="Đại Lục Begaritt" romaji="begaritto tairiku" type="Place" />
+<TERM jp="炭鉱族（ドワーフ）" vn="Than Khoáng Tộc (Dwarf)" romaji="tankouzoku (dowafu)" type="Race" />
+<TERM jp="ドルディア族" vn="tộc Doldia" romaji="dorudia zoku" type="Race" />
+<TERM jp="ミグルド族" vn="tộc Migurd" romaji="migurudo zoku" type="Race" />
+<TERM jp="ミリス教徒" vn="tín đồ Millis" romaji="mirisu kyouto" type="Character" />
+<TERM jp="フィッツ先輩" vn="tiền bối Fitz" romaji="fittsu senpai" type="Character" />
+<TERM jp="呪い" vn="lời nguyền" romaji="noroi" type="Concept" />
+<TERM jp="ロキシーさん" vn="cô Roxy" romaji="rokishii-san" type="Character" />
+<TERM jp="ボス" vn="Boss" romaji="bosu" type="Character" />
+<TERM jp="シルフィエット・グレイラット" vn="Sylphiette Greyrat" romaji="shirufietto gureiratto" type="Character" />
+<TERM jp="シルフィ様" vn="tiểu thư Sylphy" romaji="shirufi-sama" type="Character" />
+<TERM jp="人形" vn="hình nhân" romaji="ningyou" type="Creature" />
+<TERM jp="グリフォン" vn="Griffin" romaji="gurifon" type="Creature" />
+<TERM jp="バリバドム" vn="Balibadom" romaji="baribadomu" type="Creature" />
+<TERM jp="カルメリタ" vn="Carmelita" romaji="karumerita" type="Creature" />
+<TERM jp="トント" vn="Tont" romaji="tonto" type="Creature" />
+<TERM jp="ガルバン" vn="Galban" romaji="garuban" type="Creature" />
+<TERM jp="ベヒーモス" vn="Behemoth" romaji="behiimosu" type="Creature" />
+<TERM jp="ガルーダ" vn="Garuda" romaji="garuuda" type="Creature" />
+<TERM jp="中級解毒" vn="Giải độc Trung cấp" romaji="chuukyuu gedoku" type="Skill" />
+<TERM jp="シオン" vn="Sion" romaji="shion" type="Character" />
+<TERM jp="ヒュドラ" vn="Hydra" romaji="hyudora" type="Creature" />
+<TERM jp="アイアンクロウラー" vn="Iron Crawler" romaji="aian kurauraa" type="Creature" />
+<TERM jp="イートデビル" vn="Devouring Devil" romaji="iito debiru" type="Creature" />
+<TERM jp="転移の迷宮" vn="Mê cung Dịch chuyển" romaji="ten'i no meikyuu" type="Place" />
+<TERM jp="マッドスカル" vn="Mad Skull" romaji="maddo sukaru" type="Creature" />
+<TERM jp="アーマードウォリアー" vn="Armored Warrior" romaji="aamaado uoriaa" type="Creature" />
+<TERM jp="朱凶蜘蛛（タランチュラ・デスロード）" vn="Nhện Đỏ Hung Ác (Tarantula Death Lord)" romaji="shu kyou kumo (taranchura desu roodo)" type="Creature" />
+<TERM jp="タランチュラ・デスロード" vn="Tarantula Death Lord" romaji="taranchura desu roodo" type="Creature" />
+<TERM jp="水蒸（ウォータースプラッシュ）" vn="Hơi Nước (Water Splash)" romaji="suijou (wootaa supurasshu)" type="Skill" />
+<TERM jp="ウォータースプラッシュ" vn="Water Splash" romaji="wootaa supurasshu" type="Skill" />
+<TERM jp="ジロー" vn="Dillo" romaji="jiroou" type="Creature" />
+<TERM jp="守護者（ガーディアン）" vn="Thủ Hộ Giả (Guardian)" romaji="shugosha (gaadian)" type="Character" />
+<TERM jp="ガーディアン" vn="Guardian" romaji="gaadian" type="Character" />
+<TERM jp="フロストノヴァ" vn="Frost Nova" romaji="furosuto nova" type="Skill" />
+<TERM jp="双方向の魔法陣" vn="ma pháp trận hai chiều" romaji="souhoukou no mahoujin" type="Skill" />
+<TERM jp="氷霜刃（アイシクルエッジ）" vn="Lưỡi Băng (Icicle Edge)" romaji="hyousou-jin (aishikuru ejji)" type="Skill" />
+<TERM jp="アイシクルエッジ" vn="Icicle Edge" romaji="aishikuru ejji" type="Skill" />
+<TERM jp="水流（フロードフラッシュ）" vn="Thủy Lưu (Flood Flash)" romaji="suiryuu (furoodo furasshu)" type="Skill" />
+<TERM jp="フロードフラッシュ" vn="Flood Flash" romaji="furoodo furasshu" type="Skill" />
+<TERM jp="土落弾（アースピラー）" vn="Thổ Lạc Đạn (Earth Pillar)" romaji="tsuchi rakudan (aasu piraa)" type="Skill" />
+<TERM jp="アースピラー" vn="Earth Pillar" romaji="aasu piraa" type="Skill" />
+<TERM jp="火球弾（ファイアボール）" vn="Hỏa Cầu Đạn (Fireball)" romaji="kakyuu dan (faiabooru)" type="Skill" />
+<TERM jp="タランチュラ" vn="Tarantula" romaji="taranchura" type="Creature" />
+<TERM jp="パウロさん" vn="anh Paul" romaji="pauro-san" type="Character" />
+<TERM jp="アンデッド" vn="Undead" romaji="andeddo" type="Creature" />
+<TERM jp="グラディウス" vn="gladius" romaji="guradiusu" type="Item" />
+<TERM jp="光の精霊" vn="Tinh linh Ánh sáng" romaji="hikari no seirei" type="Creature" />
+<TERM jp="上級の治癒魔術" vn="ma thuật Trị liệu Thượng cấp" romaji="joukyuu no chiyu majutsu" type="Skill" />
+<TERM jp="絶対零度（アブソリュート・ゼロ）" vn="Độ Không Tuyệt Đối (Absolute Zero)" romaji="zettai reido (abusoryuuto zero)" type="Skill" />
+<TERM jp="アブソリュート・ゼロ" vn="Absolute Zero" romaji="abusoryuuto zero" type="Skill" />
+<TERM jp="魔石多頭竜（マナタイトヒュドラ）" vn="Rồng Nhiều Đầu Ma Thạch (Manatite Hydra)" romaji="maseki tatouryuu (manataito hyudora)" type="Creature" />
+<TERM jp="マナタイトヒュドラ" vn="Manatite Hydra" romaji="manataito hyudora" type="Creature" />
+<TERM jp="芋虫『アイアンクロウラー』" vn="Sâu bướm “Iron Crawler”" romaji="imomushi 'aian kurauraa'" type="Creature" />
+<TERM jp="ペルギウスの伝説" vn="Truyền thuyết về Perugius" romaji="perugiusu no densetsu" type="Event" />
+<TERM jp="転移魔法陣の遺跡" vn="Di tích Ma pháp trận Dịch chuyển" romaji="ten'i mahoujin no iseki" type="Place" />
+<TERM jp="シャインヒーリング" vn="Shine Healing" romaji="shain heeringu" type="Skill" />
+<TERM jp="北神カールマン" vn="Bắc Thần Kalman" romaji="hokushin kaaruman" type="Title" />
+<TERM jp="レッドスネーク" vn="Rắn Đỏ" romaji="reddo sneeku" type="Creature" />
+<TERM jp="ゼニスさん" vn="chị Zenith" romaji="zenisu-san" type="Character" />
+<TERM jp="クス王子" vn="Hoàng tử Pax" romaji="kusu ouji" type="Character" />
+<TERM jp="ゴーレム" vn="Golem" romaji="gooremu" type="Creature" />
+<TERM jp="神級治癒魔術" vn="ma thuật Trị liệu Thần cấp" romaji="shinkyuu chiyu majutsu" type="Skill" />
+<TERM jp="サンドガルーダ" vn="Sand Garuda" romaji="sando garuuda" type="Creature" />
+<TERM jp="ティラノサウルス" vn="Tyrannosaurus" romaji="tiranosaurusu" type="Creature" />
+<TERM jp="ルーシー・グレイラット" vn="Lucie Greyrat" romaji="ruushii gureiratto" type="Character" />
+</GLOSSARY>
+  
+  <RTAS_ANALYTICS>
+    <BASELINE>3.0</BASELINE>
+    <CURRENT_AVG>4.2</CURRENT_AVG>
+    <DRIFT>Positive - Trải qua những mất mát cực lớn (Paul hy sinh, Zenith mất trí nhớ), Rudeus đã trưởng thành thực sự, chính thức kết hôn với Roxy, đón con đầu lòng cùng Sylphiette và ổn định gia đình tại Ranoa.</DRIFT>
+  </RTAS_ANALYTICS>
+
+  <VOLUME_SUMMARY>
+    Tập 12 xoay quanh chiến dịch giải cứu Zenith tại Mê cung Chuyển dịch (Teleport Labyrinth) ở đại lục Begaritt. Rudeus hội ngộ nhóm của Paul, thành lập đội hình trong mơ và giải cứu thành công Roxy khỏi tầng sâu. Tuy nhiên, trong trận chiến sinh tử với Manatite Hydra ở phòng cuối, Paul Greyrat đã anh dũng hy sinh để bảo vệ Rudeus, còn Zenith được giải cứu nhưng lâm vào trạng thái mất trí nhớ vĩnh viễn. Trải qua cú sốc tâm lý nặng nề, Rudeus được Roxy vực dậy tinh thần và cả hai đã nảy sinh tình cảm. Trở về Sharia an toàn, Rudeus vượt qua rào cản tâm lý, được sự đồng thuận tuyệt vời của Sylphiette để rước Roxy về làm vợ thứ hai. Không lâu sau, Sylphiette sinh hạ con gái đầu lòng Lucy Greyrat. Tập truyện khép lại bằng sự khép lại của một chương đau thương và mở ra chương mới cho gia đình Greyrat.
+  </VOLUME_SUMMARY>
+</CONTINUITY_DATA_PACK>
