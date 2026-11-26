@@ -2,6 +2,9 @@ import axios from 'axios'
 import type {
   ApiKeyItem,
   ChapterSummary,
+  CharacterAppearance,
+  CharacterWithState,
+  ContinuityStatus,
   GlossaryExtractResponse,
   GlossaryImportResponse,
   GlossaryListResponse,
@@ -9,10 +12,13 @@ import type {
   GlossaryTerm,
   GlossaryTranslateResponse,
   HealthInfo,
+  MapPhaseResponse,
   ModelConfig,
   PromptPreset,
   PromptPresetPayload,
   QuotaStatusResponse,
+  ReducePhaseResponse,
+  RelationshipItem,
   Series,
   SeriesPayload,
   SplitMode,
@@ -385,4 +391,179 @@ export function getGlossaryExportUrl(
   if (volumeId) sp.set('volume_id', String(volumeId))
   if (status) sp.set('status', status)
   return `${baseURL}/api/series/${seriesId}/glossary/export?${sp.toString()}`
+}
+
+// ---------- Phase 3: Continuity, Characters & Relationships ----------
+
+export async function fetchContinuityStatus(
+  volumeId: number,
+): Promise<ContinuityStatus> {
+  const { data } = await http.get<ContinuityStatus>(
+    `/api/volumes/${volumeId}/continuity/status`,
+  )
+  return data
+}
+
+export async function runMapPhaseApi(
+  volumeId: number,
+  forceRerun = false,
+): Promise<MapPhaseResponse> {
+  const { data } = await http.post<MapPhaseResponse>(
+    `/api/volumes/${volumeId}/continuity/map`,
+    { force_rerun: forceRerun },
+  )
+  return data
+}
+
+export async function runReducePhaseApi(
+  volumeId: number,
+  skipAiSummary = false,
+): Promise<ReducePhaseResponse> {
+  const { data } = await http.post<ReducePhaseResponse>(
+    `/api/volumes/${volumeId}/continuity/reduce`,
+    { skip_ai_summary: skipAiSummary },
+  )
+  return data
+}
+
+export async function fetchVolumeCharacters(
+  volumeId: number,
+): Promise<CharacterWithState[]> {
+  const { data } = await http.get<CharacterWithState[]>(
+    `/api/volumes/${volumeId}/characters`,
+  )
+  return data
+}
+
+export async function createCharacter(
+  seriesId: number,
+  payload: {
+    canonical_name: string
+    display_name: string
+    aliases: string[]
+    archetype?: string
+    default_pair?: string
+    rtas_baseline?: number
+    volume_id?: number
+    appearance?: CharacterAppearance
+  },
+): Promise<CharacterWithState> {
+  const { data } = await http.post<CharacterWithState>(
+    `/api/series/${seriesId}/characters`,
+    payload,
+  )
+  return data
+}
+
+export async function updateCharacter(
+  characterId: number,
+  payload: {
+    canonical_name?: string
+    display_name?: string
+    aliases?: string[]
+    archetype?: string
+    default_pair?: string
+    rtas_baseline?: number
+  },
+): Promise<void> {
+  await http.patch(`/api/characters/${characterId}`, payload)
+}
+
+export async function deleteCharacter(characterId: number): Promise<void> {
+  await http.delete(`/api/characters/${characterId}`)
+}
+
+export async function upsertVolumeCharacterState(
+  volumeId: number,
+  characterId: number,
+  payload: {
+    appearance?: CharacterAppearance
+    subarc?: string
+    current_state?: string
+    notes?: string
+  },
+): Promise<void> {
+  await http.put(
+    `/api/volumes/${volumeId}/characters/${characterId}/state`,
+    payload,
+  )
+}
+
+export async function fetchRelationships(
+  seriesId: number,
+): Promise<RelationshipItem[]> {
+  const { data } = await http.get<RelationshipItem[]>(
+    `/api/series/${seriesId}/relationships`,
+  )
+  return data
+}
+
+export async function createRelationship(
+  seriesId: number,
+  payload: {
+    source_char_id: number
+    target_char_id: number
+    pair_pronoun: string
+    rtas_score?: number
+    notes?: string
+    evidence_quote?: string
+    needs_review?: boolean
+    is_locked?: boolean
+    last_updated_vol?: number
+  },
+): Promise<RelationshipItem> {
+  const { data } = await http.post<RelationshipItem>(
+    `/api/series/${seriesId}/relationships`,
+    payload,
+  )
+  return data
+}
+
+export async function updateRelationship(
+  relId: number,
+  payload: {
+    pair_pronoun?: string
+    rtas_score?: number
+    notes?: string
+    evidence_quote?: string
+    needs_review?: boolean
+    is_locked?: boolean
+  },
+): Promise<RelationshipItem> {
+  const { data } = await http.patch<RelationshipItem>(
+    `/api/relationships/${relId}`,
+    payload,
+  )
+  return data
+}
+
+export async function approveRelationship(
+  relId: number,
+  payload: {
+    pair_pronoun?: string
+    notes?: string
+    is_locked?: boolean
+  },
+): Promise<RelationshipItem> {
+  const { data } = await http.post<RelationshipItem>(
+    `/api/relationships/${relId}/approve`,
+    payload,
+  )
+  return data
+}
+
+export async function deleteRelationship(relId: number): Promise<void> {
+  await http.delete(`/api/relationships/${relId}`)
+}
+
+export async function fetchContinuityXml(volumeId: number): Promise<string> {
+  const { data } = await http.get<string>(
+    `/api/volumes/${volumeId}/continuity/xml`,
+    { responseType: 'text' },
+  )
+  return data
+}
+
+export function getContinuityXmlDownloadUrl(volumeId: number): string {
+  return `${baseURL}/api/volumes/${volumeId}/continuity/xml?download=true`
 }

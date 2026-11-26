@@ -2,27 +2,19 @@ import { ArrowLeft, Construction } from 'lucide-react'
 import type { NavSection, Series, Volume } from '../types'
 
 interface PlaceholderPageProps {
-  section: Exclude<NavSection, 'dashboard' | 'glossary' | 'settings'>
+  section: Exclude<
+    NavSection,
+    'dashboard' | 'glossary' | 'characters' | 'settings'
+  >
   selectedSeries: Series | null
   selectedVolume: Volume | null
   onBackToDashboard: () => void
 }
 
 const SECTION_DETAILS: Record<
-  Exclude<NavSection, 'dashboard' | 'glossary' | 'settings'>,
+  Exclude<NavSection, 'dashboard' | 'glossary' | 'characters' | 'settings'>,
   { title: string; phase: string; description: string; highlights: string[] }
 > = {
-  characters: {
-    title: 'Nhân vật & Ma trận Xưng hô',
-    phase: 'Phase 3',
-    description:
-      'Quản lý Roster nhân vật, trạng thái theo từng tập (ACTUAL/MENTIONED, SUB_ARC_STATE) và ma trận quan hệ có hướng A → B với trích dẫn thoại gốc.',
-    highlights: [
-      'Review Queue duyệt nhanh các cặp xưng hô AI phát hiện',
-      'Khóa cặp xưng hô (is_locked) để AI không tự ý thay đổi ở tập sau',
-      'Chấm điểm RTAS và ghi nhận diễn biến tâm lý nhân vật',
-    ],
-  },
   translate: {
     title: 'Dịch thuật & Điều phối Pool AI',
     phase: 'Phase 4',

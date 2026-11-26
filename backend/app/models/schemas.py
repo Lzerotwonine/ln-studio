@@ -411,3 +411,176 @@ class GlossaryImportResponse(BaseModel):
     imported: int
     updated: int
     skipped: int
+
+
+# ---------- Phase 3: Continuity, Characters & Relationships ----------
+
+CharacterAppearance = Literal["ACTUAL", "MENTIONED"]
+
+
+class ContinuityStatusResponse(BaseModel):
+    volume_id: int
+    series_id: int
+    volume_number: int
+    status: str
+    total_chapters: int
+    summarized_chapters: int
+    characters_count: int
+    relationships_total: int
+    relationships_needs_review: int
+    relationships_locked: int
+    relationships_missing_reverse: int
+    volume_summary: str
+    rtas_baseline: float
+    rtas_current_avg: float
+    rtas_drift: str
+
+
+class MapPhaseRequest(BaseModel):
+    force_rerun: bool = False
+    chapter_ids: list[int] | None = None
+
+
+class MapChapterSummaryItem(BaseModel):
+    chapter_id: int
+    chapter_index: int
+    title: str
+    cached: bool
+    events_count: int
+    interactions_count: int
+
+
+class MapPhaseResponse(BaseModel):
+    volume_id: int
+    total_chapters: int
+    processed_chapters: int
+    skipped_cached: int
+    used_slots: list[str]
+    chapters: list[MapChapterSummaryItem]
+
+
+class ReducePhaseRequest(BaseModel):
+    skip_ai_summary: bool = False
+
+
+class ReducePhaseResponse(BaseModel):
+    volume_id: int
+    series_id: int
+    chapters_reduced: int
+    actual_characters: int
+    mentioned_characters: int
+    relationships_added: int
+    relationships_updated: int
+    locked_preserved: int
+    missing_reverse_created: int
+    sub_arc_updated: int
+    volume_summary: str
+    rtas_current_avg: float
+    rtas_drift: str
+    used_slot: str | None = None
+
+
+class CharacterCreate(BaseModel):
+    canonical_name: str = Field(..., min_length=1, max_length=150)
+    display_name: str = Field(..., min_length=1, max_length=150)
+    aliases: list[str] = Field(default_factory=list)
+    archetype: str = "NORMAL"
+    default_pair: str = "Tôi-Cậu"
+    rtas_baseline: float = Field(default=3.5, ge=1.0, le=5.0)
+    volume_id: int | None = None
+    appearance: CharacterAppearance = "ACTUAL"
+
+
+class CharacterUpdate(BaseModel):
+    canonical_name: str | None = Field(default=None, min_length=1, max_length=150)
+    display_name: str | None = Field(default=None, min_length=1, max_length=150)
+    aliases: list[str] | None = None
+    archetype: str | None = None
+    default_pair: str | None = None
+    rtas_baseline: float | None = Field(default=None, ge=1.0, le=5.0)
+
+
+class VolumeCharacterStateUpdate(BaseModel):
+    appearance: CharacterAppearance | None = None
+    subarc: str | None = None
+    current_state: str | None = None
+    notes: str | None = None
+
+
+class CharacterWithStateResponse(BaseModel):
+    id: int
+    series_id: int
+    canonical_name: str
+    display_name: str
+    aliases: list[str]
+    archetype: str
+    default_pair: str
+    rtas_baseline: float
+    appearance: CharacterAppearance
+    subarc: str
+    current_state: str
+    state_notes: str
+    in_volume: bool
+
+
+class RelationshipCreate(BaseModel):
+    source_char_id: int
+    target_char_id: int
+    pair_pronoun: str = ""
+    rtas_score: float = Field(default=3.5, ge=1.0, le=5.0)
+    notes: str = ""
+    evidence_quote: str = ""
+    needs_review: bool = True
+    is_locked: bool = False
+    last_updated_vol: int = Field(default=1, ge=1)
+
+
+class RelationshipUpdate(BaseModel):
+    pair_pronoun: str | None = None
+    rtas_score: float | None = Field(default=None, ge=1.0, le=5.0)
+    notes: str | None = None
+    evidence_quote: str | None = None
+    needs_review: bool | None = None
+    is_locked: bool | None = None
+
+
+class RelationshipResponse(BaseModel):
+    id: int
+    series_id: int
+    source_char_id: int
+    target_char_id: int
+    source_name: str
+    source_canonical: str
+    target_name: str
+    target_canonical: str
+    pair_pronoun: str
+    rtas_score: float
+    notes: str
+    evidence_quote: str
+    needs_review: bool
+    is_locked: bool
+    is_missing_reverse: bool
+    last_updated_vol: int
+
+
+class RelationshipApproveRequest(BaseModel):
+    pair_pronoun: str | None = None
+    notes: str | None = None
+    is_locked: bool = False
+
+
+class RelationshipBulkApproveRequest(BaseModel):
+    relationship_ids: list[int] = Field(default_factory=list)
+    is_locked: bool = False
+
+
+class RelevantContextRequest(BaseModel):
+    chapter_text: str
+
+
+class RelevantContextResponse(BaseModel):
+    volume_id: int
+    matched_characters: list[dict]
+    matched_relationships: list[dict]
+    matched_glossary: list[dict]
+    ignored_shared_parts: list[str]

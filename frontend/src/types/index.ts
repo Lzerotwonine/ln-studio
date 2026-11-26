@@ -350,3 +350,125 @@ export interface GlossaryImportResponse {
   updated: number
   skipped: number
 }
+
+// ---------- Phase 3: Continuity, Characters & Relationships ----------
+
+export type CharacterAppearance = 'ACTUAL' | 'MENTIONED'
+
+export const COMMON_PRONOUN_PAIRS = [
+  'Tôi-Cậu',
+  'Anh-Em',
+  'Em-Anh',
+  'Ta-Ngươi',
+  'Ta-Nhóc',
+  'Con-Cha',
+  'Con-Mẹ',
+  'Cha-Con',
+  'Mẹ-Con',
+  'Em-Sư phụ',
+  'Ta-Con',
+  'Chị-Em',
+  'Em-Chị',
+  'Cháu-Bác',
+  'Cô-Cháu',
+  'Tôi-Chị',
+  'Tôi-Anh',
+  'Tôi-Cô',
+  'Ta-Cô',
+  'Tôi-Cậu chủ',
+  'Tại hạ-Đạo hữu',
+  'Vãn bối-Tiền bối',
+  'Tiền bối-Vãn bối',
+  'Bản tọa-Ngươi',
+] as const
+
+export const CHARACTER_ARCHETYPES = [
+  'NORMAL',
+  'TSUNDERE',
+  'KUUDERE',
+  'ONEE',
+  'GYARU',
+  'SAMURAI',
+  'CHUUNI',
+  'NOBLE',
+  'MENTOR',
+  'VILLAIN',
+] as const
+
+export interface ContinuityStatus {
+  volume_id: number
+  series_id: number
+  volume_number: number
+  status: string
+  total_chapters: number
+  summarized_chapters: number
+  characters_count: number
+  relationships_total: number
+  relationships_needs_review: number
+  relationships_locked: number
+  relationships_missing_reverse: number
+  volume_summary: string
+  rtas_baseline: number
+  rtas_current_avg: number
+  rtas_drift: string
+}
+
+export interface MapPhaseResponse {
+  volume_id: number
+  total_chapters: number
+  processed_chapters: number
+  skipped_cached: number
+  used_slots: string[]
+}
+
+export interface ReducePhaseResponse {
+  volume_id: number
+  series_id: number
+  chapters_reduced: number
+  actual_characters: number
+  mentioned_characters: number
+  relationships_added: number
+  relationships_updated: number
+  locked_preserved: number
+  missing_reverse_created: number
+  sub_arc_updated: number
+  volume_summary: string
+  rtas_current_avg: number
+  rtas_drift: string
+  used_slot: string | null
+}
+
+export interface CharacterWithState {
+  id: number
+  series_id: number
+  canonical_name: string
+  display_name: string
+  aliases: string[]
+  archetype: string
+  default_pair: string
+  rtas_baseline: number
+  appearance: CharacterAppearance
+  subarc: string
+  current_state: string
+  state_notes: string
+  in_volume: boolean
+}
+
+export interface RelationshipItem {
+  id: number
+  series_id: number
+  source_char_id: number
+  target_char_id: number
+  source_name: string
+  source_canonical: string
+  target_name: string
+  target_canonical: string
+  pair_pronoun: string
+  rtas_score: number
+  notes: string
+  evidence_quote: string
+  needs_review: boolean
+  is_locked: boolean
+  is_missing_reverse: boolean
+  last_updated_vol: number
+}

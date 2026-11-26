@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { fetchHealth } from './lib/api'
+import { ContinuityTab } from './pages/ContinuityTab'
 import { DashboardPage } from './pages/DashboardPage'
 import { GlossaryTab } from './pages/GlossaryTab'
 import { PlaceholderPage } from './pages/PlaceholderPage'
@@ -81,10 +82,21 @@ export function App() {
           />
         )}
 
+        {activeSection === 'characters' && (
+          <ContinuityTab
+            selectedSeries={selectedSeries}
+            selectedVolume={selectedVolume}
+            onSelectSeries={setSelectedSeries}
+            onSelectVolume={setSelectedVolume}
+            onBackToDashboard={() => setActiveSection('dashboard')}
+          />
+        )}
+
         {activeSection === 'settings' && <SettingsPage />}
 
         {activeSection !== 'dashboard' &&
           activeSection !== 'glossary' &&
+          activeSection !== 'characters' &&
           activeSection !== 'settings' && (
             <PlaceholderPage
               section={activeSection}

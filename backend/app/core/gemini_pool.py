@@ -484,6 +484,8 @@ class GeminiPool:
         system_instruction: str | None = None,
         temperature: float | None = None,
         max_output_tokens: int | None = None,
+        response_mime_type: str | None = None,
+        response_schema: Any = None,
         models: Iterable[str] | None = None,
         max_503_rounds_per_model: int = 1,
     ) -> PoolResponse:
@@ -506,6 +508,10 @@ class GeminiPool:
             config_kwargs["temperature"] = temperature
         if max_output_tokens is not None:
             config_kwargs["max_output_tokens"] = max_output_tokens
+        if response_mime_type is not None:
+            config_kwargs["response_mime_type"] = response_mime_type
+        if response_schema is not None:
+            config_kwargs["response_schema"] = response_schema
         gen_config = types.GenerateContentConfig(**config_kwargs) if config_kwargs else None
 
         attempts = 0
