@@ -15,8 +15,10 @@ from app.api.chapters import router as chapters_router
 from app.api.continuity import router as continuity_router
 from app.api.glossary import router as glossary_router
 from app.api.masks import router as masks_router
+from app.api.media import router as media_router
 from app.api.presets import router as presets_router
 from app.api.proofread import router as proofread_router
+from app.api.references import router as references_router
 from app.api.series import router as series_router
 from app.api.settings import router as settings_router
 from app.api.translate import router as translate_router
@@ -74,6 +76,8 @@ def create_app(dist_dir: Path | None = None) -> FastAPI:
     app.include_router(glossary_router)
     app.include_router(continuity_router)
     app.include_router(masks_router)
+    app.include_router(media_router)
+    app.include_router(references_router)
     app.include_router(translate_router)
     app.include_router(proofread_router)
 

@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActionMenu } from '../components/ActionMenu'
+import { TaskModelSelector } from '../components/TaskModelSelector'
 import {
   approveRelationship,
   createCharacter,
@@ -76,6 +77,7 @@ export function ContinuityTab({
   const loadSeqRef = useRef(0)
 
   // Pipeline buttons
+  const [modelOverride, setModelOverride] = useState('')
   const [runningMap, setRunningMap] = useState(false)
   const [runningReduce, setRunningReduce] = useState(false)
 
@@ -191,7 +193,11 @@ export function ContinuityTab({
     setRunningMap(true)
     setErrorMsg(null)
     try {
-      const res = await runMapPhaseApi(selectedVolume.id, forceRerun)
+      const res = await runMapPhaseApi(
+        selectedVolume.id,
+        forceRerun,
+        modelOverride || null,
+      )
       notify(
         `MAP PHASE hoàn tất: đã phân tích ${res.processed_chapters} chương mới, dùng lại cache ${res.skipped_cached} chương.`,
       )
@@ -208,7 +214,11 @@ export function ContinuityTab({
     setRunningReduce(true)
     setErrorMsg(null)
     try {
-      const res = await runReducePhaseApi(selectedVolume.id, false)
+      const res = await runReducePhaseApi(
+        selectedVolume.id,
+        false,
+        modelOverride || null,
+      )
       notify(
         `REDUCE & MERGE xong: ${res.actual_characters} nhân vật ACTUAL, +${res.relationships_added} cặp xưng hô mới, +${res.missing_reverse_created} cảnh báo thiếu chiều ngược, bảo toàn ${res.locked_preserved} cặp đã khóa.`,
       )
@@ -456,6 +466,11 @@ export function ContinuityTab({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <TaskModelSelector
+            taskKey="continuity_map"
+            value={modelOverride}
+            onChange={setModelOverride}
+          />
           <button
             type="button"
             disabled={runningMap || (statusInfo?.total_chapters ?? 0) === 0}

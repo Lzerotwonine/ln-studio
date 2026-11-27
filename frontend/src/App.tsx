@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
+import { HelpDrawer } from './components/HelpDrawer'
 import { Sidebar } from './components/Sidebar'
 import { TopHeader } from './components/TopHeader'
 import { fetchHealth, fetchSeriesList, fetchVolumes } from './lib/api'
 import { ContinuityTab } from './pages/ContinuityTab'
 import { DashboardPage } from './pages/DashboardPage'
 import { GlossaryTab } from './pages/GlossaryTab'
+import { GuidePage } from './pages/GuidePage'
 import { ProofreadTab } from './pages/ProofreadTab'
 import { SettingsPage } from './pages/SettingsPage'
 import { TranslateTab } from './pages/TranslateTab'
@@ -20,6 +22,7 @@ export function App() {
   const [selectedSeries, setSelectedSeries] = useState<Series | null>(null)
   const [selectedVolume, setSelectedVolume] = useState<Volume | null>(null)
   const [backendOnline, setBackendOnline] = useState(true)
+  const [helpOpen, setHelpOpen] = useState(false)
   const [isDark, setIsDark] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false
     const stored = window.localStorage.getItem('ln-studio-theme')
@@ -154,6 +157,7 @@ export function App() {
           selectedVolume={selectedVolume}
           onSelectSeries={handleSelectSeries}
           onSelectVolume={setSelectedVolume}
+          onOpenHelp={() => setHelpOpen(true)}
         />
 
         <main className="flex-1 min-h-0 overflow-y-auto">
@@ -202,9 +206,22 @@ export function App() {
             />
           )}
 
-          {activeSection === 'settings' && <SettingsPage />}
+          {activeSection === 'settings' && (
+            <SettingsPage selectedSeries={selectedSeries} />
+          )}
+
+          {activeSection === 'guide' && (
+            <GuidePage onNavigate={setActiveSection} />
+          )}
         </main>
       </div>
+
+      <HelpDrawer
+        open={helpOpen}
+        activeSection={activeSection}
+        onClose={() => setHelpOpen(false)}
+        onOpenFullGuide={() => setActiveSection('guide')}
+      />
     </div>
   )
 }

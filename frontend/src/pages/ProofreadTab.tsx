@@ -4,6 +4,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  Edit3,
+  Eye,
   FileText,
   MoreHorizontal,
   Replace,
@@ -13,6 +15,8 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActionMenu } from '../components/ActionMenu'
+import { MarkdownPreview } from '../components/MarkdownPreview'
+import { TaskModelSelector } from '../components/TaskModelSelector'
 import {
   extractErrorMessage,
   fetchChapterProofread,
@@ -104,6 +108,8 @@ export function ProofreadTab({
   const [savedText, setSavedText] = useState('')
   const [saveState, setSaveState] = useState<SaveState>('saved')
   const [fontSize, setFontSize] = useState<number>(15)
+  const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit')
+  const [retransModelOverride, setRetransModelOverride] = useState<string>('')
 
   // Hover tooltip state for Raw glossary highlights
   const [hoveredTerm, setHoveredTerm] = useState<{
@@ -322,6 +328,7 @@ export function ProofreadTab({
         source_side: selectionInfo.side,
         instruction: retransInstruction,
         temperature: 0.5,
+        model_override: retransModelOverride || null,
       })
       setRetransResult(res.retranslated_text)
       setRetransSlot(res.used_slot)
@@ -658,6 +665,33 @@ export function ProofreadTab({
               </div>
 
               <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-zinc-400">
+                <div className="inline-flex rounded-lg bg-slate-100 dark:bg-zinc-950 p-0.5 font-medium">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('edit')}
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md cursor-pointer ${
+                      viewMode === 'edit'
+                        ? 'bg-white dark:bg-zinc-800 text-slate-900 dark:text-zinc-100 shadow-xs'
+                        : 'text-slate-500 dark:text-zinc-400'
+                    }`}
+                  >
+                    <Edit3 className="w-3 h-3" />
+                    Soạn thảo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('preview')}
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md cursor-pointer ${
+                      viewMode === 'preview'
+                        ? 'bg-white dark:bg-zinc-800 text-indigo-700 dark:text-indigo-300 shadow-xs'
+                        : 'text-slate-500 dark:text-zinc-400'
+                    }`}
+                  >
+                    <Eye className="w-3 h-3" />
+                    Đọc xem trước
+                  </button>
+                </div>
+
                 <span>Cỡ chữ:</span>
                 <button
                   type="button"
@@ -677,17 +711,27 @@ export function ProofreadTab({
               </div>
             </div>
 
-            <textarea
-              ref={editorRef}
-              value={draftText}
-              onChange={(e) => setDraftText(e.target.value)}
-              onSelect={captureEditorSelection}
-              onMouseUp={captureEditorSelection}
-              onKeyUp={captureEditorSelection}
-              placeholder="Bản dịch tiếng Việt của chương sẽ hiển thị tại đây. Bạn có thể chỉnh sửa trực tiếp — hệ thống tự động lưu sau 1.5 giây ngừng gõ (hoặc Ctrl+S)."
-              style={{ fontSize: `${fontSize}px` }}
-              className="flex-1 w-full resize-none p-6 leading-relaxed bg-transparent text-slate-900 dark:text-zinc-100 focus:outline-none font-serif"
-            />
+            {viewMode === 'preview' ? (
+              <div className="flex-1 overflow-y-auto">
+                <MarkdownPreview
+                  content={draftText}
+                  fontSize={fontSize}
+                  emptyPlaceholder="Chưa có bản dịch tiếng Việt. Chuyển sang chế độ Soạn thảo để nhập nội dung."
+                />
+              </div>
+            ) : (
+              <textarea
+                ref={editorRef}
+                value={draftText}
+                onChange={(e) => setDraftText(e.target.value)}
+                onSelect={captureEditorSelection}
+                onMouseUp={captureEditorSelection}
+                onKeyUp={captureEditorSelection}
+                placeholder="Bản dịch tiếng Việt của chương sẽ hiển thị tại đây. Bạn có thể chỉnh sửa trực tiếp — hệ thống tự động lưu sau 1.5 giây ngừng gõ (hoặc Ctrl+S)."
+                style={{ fontSize: `${fontSize}px` }}
+                className="flex-1 w-full resize-none p-6 leading-relaxed bg-transparent text-slate-900 dark:text-zinc-100 focus:outline-none font-serif"
+              />
+            )}
           </section>
         </div>
       )}
@@ -890,9 +934,17 @@ export function ProofreadTab({
               </div>
 
               <div>
-                <label className="block font-medium text-slate-600 dark:text-zinc-400 mb-1">
-                  Ghi chú cho AI (tùy chọn)
-                </label>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                  <label className="block font-medium text-slate-600 dark:text-zinc-400">
+                    Ghi chú cho AI (tùy chọn)
+                  </label>
+                  <TaskModelSelector
+                    taskKey="proofread_retranslate"
+                    value={retransModelOverride}
+                    onChange={setRetransModelOverride}
+                    compact
+                  />
+                </div>
                 <input
                   type="text"
                   value={retransInstruction}

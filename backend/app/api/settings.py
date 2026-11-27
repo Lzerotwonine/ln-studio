@@ -10,6 +10,8 @@ from fastapi import APIRouter, HTTPException, status
 from app.core.database import (
     DEFAULT_MODEL_LIMITS,
     DEFAULT_MODELS,
+    DEFAULT_TASK_MODELS,
+    TASK_MODEL_KEYS,
     db_session,
     get_setting,
     set_setting,
@@ -27,6 +29,9 @@ from app.models.schemas import (
     QuotaSlotResponse,
     QuotaStatusResponse,
     QuotaSummary,
+    TaskModelAssignment,
+    TaskModelsResponse,
+    TaskModelsUpdatePayload,
 )
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -179,6 +184,58 @@ def update_models_config(payload: ModelConfigPayload) -> ModelConfigResponse:
             set_setting(conn, "model_limits", serialized_limits)
 
     return get_models_config()
+
+
+# ---------- Task-based Model Routing ----------
+
+@router.get("/task-models", response_model=TaskModelsResponse)
+def get_task_models_config() -> TaskModelsResponse:
+    with db_session() as conn:
+        raw = get_setting(conn, "task_models", DEFAULT_TASK_MODELS)
+        global_models = sanitize_models(get_setting(conn, "model_priority", DEFAULT_MODELS))
+
+    tasks: dict[str, TaskModelAssignment] = {}
+    all_available: list[str] = list(global_models)
+    for key in TASK_MODEL_KEYS:
+        default_cfg = DEFAULT_TASK_MODELS[key]
+        entry = raw.get(key) if isinstance(raw, dict) else None
+        if isinstance(entry, dict):
+            primary = str(entry.get("primary") or default_cfg["primary"]).strip() or default_cfg["primary"]
+            fallbacks = [m for m in sanitize_models(entry.get("fallbacks")) if m != primary]
+        else:
+            primary = default_cfg["primary"]
+            fallbacks = list(default_cfg["fallbacks"])
+        tasks[key] = TaskModelAssignment(primary=primary, fallbacks=fallbacks)
+        all_available.append(primary)
+        all_available.extend(fallbacks)
+
+    return TaskModelsResponse(
+        tasks=tasks,
+        available_models=sanitize_models(all_available),
+    )
+
+
+@router.put("/task-models", response_model=TaskModelsResponse)
+def update_task_models_config(payload: TaskModelsUpdatePayload) -> TaskModelsResponse:
+    with db_session() as conn:
+        existing_raw = get_setting(conn, "task_models", DEFAULT_TASK_MODELS)
+        next_map: dict[str, dict[str, Any]] = {}
+        for key in TASK_MODEL_KEYS:
+            if key in payload.tasks:
+                cfg = payload.tasks[key]
+                primary = cfg.primary.strip()
+                if not primary:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Model ưu tiên cho tác vụ '{key}' không được để trống.",
+                    )
+                fallbacks = [m for m in sanitize_models(cfg.fallbacks) if m != primary]
+                next_map[key] = {"primary": primary, "fallbacks": fallbacks}
+            else:
+                prev = existing_raw.get(key) if isinstance(existing_raw, dict) else None
+                next_map[key] = prev if isinstance(prev, dict) else dict(DEFAULT_TASK_MODELS[key])
+        set_setting(conn, "task_models", next_map)
+    return get_task_models_config()
 
 
 # ---------- Quota Slots ----------

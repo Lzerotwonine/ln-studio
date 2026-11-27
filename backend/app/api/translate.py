@@ -41,6 +41,9 @@ def start_volume_translation(
             else None
         ),
         system_prompt_override=req.system_prompt_override,
+        pre_mask=req.pre_mask,
+        mature_mode=req.mature_mode,
+        model_override=req.model_override,
     )
     try:
         data = translation_job_manager.start_job(
@@ -139,6 +142,9 @@ def retranslate_chapter(
             else None
         ),
         system_prompt_override=req.system_prompt_override,
+        pre_mask=req.pre_mask,
+        mature_mode=req.mature_mode,
+        model_override=req.model_override,
     )
     try:
         res = translate_single_chapter(chapter_id, opts)

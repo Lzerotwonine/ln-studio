@@ -1,4 +1,4 @@
-import { BookOpen, Layers } from 'lucide-react'
+import { BookOpen, HelpCircle, Layers } from 'lucide-react'
 import type { Series, Volume } from '../types'
 import { formatVolumeLabel, LANG_META, MODE_META } from '../types'
 
@@ -9,6 +9,7 @@ interface TopHeaderProps {
   selectedVolume: Volume | null
   onSelectSeries: (series: Series | null) => void
   onSelectVolume: (volume: Volume | null) => void
+  onOpenHelp: () => void
 }
 
 export function TopHeader({
@@ -18,6 +19,7 @@ export function TopHeader({
   selectedVolume,
   onSelectSeries,
   onSelectVolume,
+  onOpenHelp,
 }: TopHeaderProps) {
   return (
     <header className="h-14 shrink-0 border-b border-slate-200 dark:border-zinc-800 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xs px-5 flex items-center justify-between gap-4 z-20">
@@ -93,21 +95,33 @@ export function TopHeader({
         </div>
       </div>
 
-      {/* Right metadata pills */}
-      {selectedSeries && (
-        <div className="hidden md:flex items-center gap-1.5 shrink-0">
-          <span
-            className={`inline-flex items-center px-2 py-0.5 text-[11px] font-semibold rounded-md border ${LANG_META[selectedSeries.source_lang].badgeClass}`}
-          >
-            {LANG_META[selectedSeries.source_lang].short}
-          </span>
-          <span
-            className={`inline-flex items-center px-2 py-0.5 text-[11px] font-medium rounded-md border ${MODE_META[selectedSeries.translation_mode].badgeClass}`}
-          >
-            {MODE_META[selectedSeries.translation_mode].label}
-          </span>
-        </div>
-      )}
+      {/* Right metadata pills + Contextual Help button */}
+      <div className="flex items-center gap-2 shrink-0">
+        {selectedSeries && (
+          <div className="hidden md:flex items-center gap-1.5">
+            <span
+              className={`inline-flex items-center px-2 py-0.5 text-[11px] font-semibold rounded-md border ${LANG_META[selectedSeries.source_lang].badgeClass}`}
+            >
+              {LANG_META[selectedSeries.source_lang].short}
+            </span>
+            <span
+              className={`inline-flex items-center px-2 py-0.5 text-[11px] font-medium rounded-md border ${MODE_META[selectedSeries.translation_mode].badgeClass}`}
+            >
+              {MODE_META[selectedSeries.translation_mode].label}
+            </span>
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={onOpenHelp}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950 text-slate-700 dark:text-zinc-200 hover:bg-indigo-50 dark:hover:bg-indigo-500/15 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors cursor-pointer"
+          title="Mở hướng dẫn thao tác cho màn hình hiện tại"
+        >
+          <HelpCircle className="w-3.5 h-3.5 text-indigo-500" />
+          <span>Hướng dẫn</span>
+        </button>
+      </div>
     </header>
   )
 }

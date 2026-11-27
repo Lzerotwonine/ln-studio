@@ -176,6 +176,30 @@ class ModelConfigResponse(BaseModel):
     model_limits: dict[str, ModelLimitItem]
 
 
+TaskModelKey = Literal[
+    "glossary_translate",
+    "continuity_map",
+    "continuity_reduce",
+    "translate_main",
+    "sensitive_scan",
+    "proofread_retranslate",
+]
+
+
+class TaskModelAssignment(BaseModel):
+    primary: str = Field(..., min_length=1, max_length=100)
+    fallbacks: list[str] = Field(default_factory=list)
+
+
+class TaskModelsResponse(BaseModel):
+    tasks: dict[str, TaskModelAssignment]
+    available_models: list[str] = Field(default_factory=list)
+
+
+class TaskModelsUpdatePayload(BaseModel):
+    tasks: dict[str, TaskModelAssignment]
+
+
 class QuotaSlotResponse(BaseModel):
     slot_id: str
     key_name: str
@@ -346,6 +370,13 @@ class ChapterDetailResponse(BaseModel):
 
 # ---------- Phase 2: Master Glossary ----------
 
+GlossarySortBy = Literal[
+    "source_term", "vi_term", "freq", "first_seen_vol", "term_type", "status"
+]
+SortDir = Literal["asc", "desc"]
+GlossaryDuplicateMode = Literal["skip", "upsert"]
+
+
 class GlossaryTermCreate(BaseModel):
     source_term: str = Field(..., min_length=1, max_length=120)
     vi_term: str = ""
@@ -354,7 +385,7 @@ class GlossaryTermCreate(BaseModel):
     english_meaning: str = ""
     term_type: str = "Concept"
     status: GlossaryStatus = "new"
-    first_seen_vol: int = Field(default=1, ge=1)
+    first_seen_vol: int = Field(default=1, ge=0)
     total_freq: int = Field(default=1, ge=1)
 
     @field_validator("source_term")
@@ -393,9 +424,23 @@ class GlossaryTermResponse(BaseModel):
 
 class GlossaryListResponse(BaseModel):
     items: list[GlossaryTermResponse]
+    total_count: int
     total_filtered: int
     total_in_scope: int
     status_counts: dict[str, int]
+    distinct_first_seen_vols: list[int] = Field(default_factory=list)
+
+
+class GlossaryFilterCriteria(BaseModel):
+    volume_id: int | None = None
+    status: GlossaryStatus | None = None
+    term_type: str | None = None
+    min_freq: int | None = Field(default=None, ge=1)
+    max_freq: int | None = Field(default=None, ge=1)
+    missing_vi: bool = False
+    missing_han_viet: bool = False
+    first_seen_vol: int | None = Field(default=None, ge=0)
+    search: str | None = None
 
 
 class GlossaryExtractRequest(BaseModel):
@@ -415,6 +460,17 @@ class GlossaryTranslateRequest(BaseModel):
     volume_id: int | None = None
     batch_size: int = Field(default=400, ge=1, le=500)
     max_rounds: int = Field(default=3, ge=1, le=5)
+    model_override: str | None = None
+
+
+class GlossaryTranslateSelectedRequest(BaseModel):
+    term_ids: list[int] = Field(default_factory=list)
+    apply_to_filter: bool = False
+    filter: GlossaryFilterCriteria | None = None
+    exclude_ids: list[int] = Field(default_factory=list)
+    batch_size: int = Field(default=400, ge=1, le=500)
+    max_rounds: int = Field(default=3, ge=1, le=5)
+    model_override: str | None = None
 
 
 class GlossaryTranslateResponse(BaseModel):
@@ -430,12 +486,29 @@ class GlossaryTranslateResponse(BaseModel):
 
 
 class GlossaryBulkStatusRequest(BaseModel):
+    series_id: int | None = None
     term_ids: list[int] = Field(default_factory=list)
+    apply_to_filter: bool = False
+    filter: GlossaryFilterCriteria | None = None
+    exclude_ids: list[int] = Field(default_factory=list)
     status: GlossaryStatus
 
 
-class GlossaryBulkDeleteRequest(BaseModel):
+class GlossaryBulkTypeRequest(BaseModel):
+    series_id: int | None = None
     term_ids: list[int] = Field(default_factory=list)
+    apply_to_filter: bool = False
+    filter: GlossaryFilterCriteria | None = None
+    exclude_ids: list[int] = Field(default_factory=list)
+    term_type: str = Field(..., min_length=1, max_length=64)
+
+
+class GlossaryBulkDeleteRequest(BaseModel):
+    series_id: int | None = None
+    term_ids: list[int] = Field(default_factory=list)
+    apply_to_filter: bool = False
+    filter: GlossaryFilterCriteria | None = None
+    exclude_ids: list[int] = Field(default_factory=list)
 
 
 class GlossaryImportResponse(BaseModel):
@@ -470,6 +543,7 @@ class ContinuityStatusResponse(BaseModel):
 class MapPhaseRequest(BaseModel):
     force_rerun: bool = False
     chapter_ids: list[int] | None = None
+    model_override: str | None = None
 
 
 class MapChapterSummaryItem(BaseModel):
@@ -492,6 +566,7 @@ class MapPhaseResponse(BaseModel):
 
 class ReducePhaseRequest(BaseModel):
     skip_ai_summary: bool = False
+    model_override: str | None = None
 
 
 class ReducePhaseResponse(BaseModel):
@@ -627,6 +702,9 @@ class TranslateStartRequest(BaseModel):
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     hybrid_config: HybridConfig | None = None
     system_prompt_override: str | None = None
+    pre_mask: bool = False
+    mature_mode: bool = False
+    model_override: str | None = None
     only_uncompleted: bool = True
     only_failed_or_blocked: bool = False
 
@@ -636,6 +714,9 @@ class RetranslateChapterRequest(BaseModel):
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     hybrid_config: HybridConfig | None = None
     system_prompt_override: str | None = None
+    pre_mask: bool = False
+    mature_mode: bool = False
+    model_override: str | None = None
 
 
 class TranslateChapterRow(BaseModel):
@@ -692,13 +773,18 @@ class DebugContextResponse(BaseModel):
     ignored_shared_parts: list[str]
 
 
+MaskSourceLang = Literal["all", "ja", "zh", "ko"]
+
+
 class SensitiveMaskCreate(BaseModel):
     series_id: int | None = None
+    source_lang: MaskSourceLang = "all"
     raw_phrase: str = Field(..., min_length=1, max_length=255)
     safe_replacement: str = Field(..., min_length=1, max_length=255)
 
 
 class SensitiveMaskUpdate(BaseModel):
+    source_lang: MaskSourceLang | None = None
     raw_phrase: str | None = Field(default=None, min_length=1, max_length=255)
     safe_replacement: str | None = Field(default=None, min_length=1, max_length=255)
 
@@ -706,9 +792,23 @@ class SensitiveMaskUpdate(BaseModel):
 class SensitiveMaskResponse(BaseModel):
     id: int
     series_id: int | None = None
+    source_lang: str = "all"
     raw_phrase: str
     safe_replacement: str
     created_at: str
+
+
+class SensitiveMaskBulkImportRequest(BaseModel):
+    text: str = Field(..., min_length=1)
+    series_id: int | None = None
+    source_lang: MaskSourceLang = "all"
+
+
+class SensitiveMaskBulkImportResponse(BaseModel):
+    imported: int
+    updated: int
+    skipped: int
+    invalid_lines: list[str] = Field(default_factory=list)
 
 
 class SensitiveScanResponse(BaseModel):
@@ -812,6 +912,7 @@ class RetranslateSelectionRequest(BaseModel):
     source_side: Literal["raw", "translated"] = "translated"
     instruction: str = ""
     temperature: float = Field(default=0.5, ge=0.0, le=1.5)
+    model_override: str | None = None
 
 
 class RetranslateSelectionResponse(BaseModel):
@@ -819,3 +920,36 @@ class RetranslateSelectionResponse(BaseModel):
     original_selection: str
     retranslated_text: str
     used_slot: str
+
+
+# ---------- Batch C: Reference Packs & Media ----------
+
+class ReferenceFileResponse(BaseModel):
+    id: int
+    pack_name: str
+    filename: str
+    size_bytes: int
+    estimated_tokens: int
+    use_in_summary: bool
+    use_in_translate: bool
+    is_active: bool
+    created_at: str
+    updated_at: str
+
+
+class ReferenceFileDetailResponse(ReferenceFileResponse):
+    content: str
+
+
+class ReferenceFileUpdate(BaseModel):
+    pack_name: str | None = None
+    use_in_summary: bool | None = None
+    use_in_translate: bool | None = None
+    is_active: bool | None = None
+    content: str | None = None
+
+
+class VolumeMediaItem(BaseModel):
+    filename: str
+    url: str
+    size_bytes: int

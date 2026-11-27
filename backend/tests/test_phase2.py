@@ -384,7 +384,12 @@ def test_glossary_tsv_csv_import_export_and_deterministic_xml(isolated_db: Path)
     assert parsed.tag == "GLOSSARY"
     terms = parsed.findall("TERM")
     assert len(terms) == 2
-    assert any(el.attrib["source"] == "剣&盾" and el.attrib["vn"] == "Kiếm & Khiên" for el in terms)
+    assert any(
+        el.attrib.get("jp") == "剣&盾"
+        and el.attrib.get("vn") == "Kiếm & Khiên"
+        and el.attrib.get("romaji") == "ken to tate"
+        for el in terms
+    )
 
 
 # ---------- 4. Phase 2 REST API Smoke Tests ----------

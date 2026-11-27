@@ -13,6 +13,8 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { DebugContextModal } from '../components/DebugContextModal'
 import { SensitiveMaskModal } from '../components/SensitiveMaskModal'
+import { SensitiveMasksManager } from '../components/SensitiveMasksManager'
+import { TaskModelSelector } from '../components/TaskModelSelector'
 import {
   extractErrorMessage,
   fetchTranslateStatus,
@@ -59,6 +61,10 @@ export function TranslateTab({
   )
   const [temperature, setTemperature] = useState<number>(0.7)
   const [onlyUncompleted, setOnlyUncompleted] = useState<boolean>(true)
+  const [preMask, setPreMask] = useState<boolean>(false)
+  const [matureMode, setMatureMode] = useState<boolean>(false)
+  const [modelOverride, setModelOverride] = useState<string>('')
+  const [masksDrawerOpen, setMasksDrawerOpen] = useState<boolean>(false)
   const [hybridCfg, setHybridCfg] = useState<HybridConfig>(
     selectedSeries?.hybrid_config ?? {
       use_glossary: true,
@@ -253,6 +259,9 @@ export function TranslateTab({
         mode,
         temperature,
         hybrid_config: hybridCfg,
+        pre_mask: preMask,
+        mature_mode: matureMode,
+        model_override: modelOverride || null,
         only_uncompleted: onlyUncompleted,
         only_failed_or_blocked: onlyFailedOrBlocked,
       })
@@ -302,6 +311,9 @@ export function TranslateTab({
         mode,
         temperature,
         hybrid_config: hybridCfg,
+        pre_mask: preMask,
+        mature_mode: matureMode,
+        model_override: modelOverride || null,
       })
       notify(
         `Chương ${ch.chapter_index}: ${res.status} (ratio ${res.char_ratio.toFixed(2)}${res.retried_with_fiction_context ? ', đã thử lại <FICTION_CONTEXT>' : ''}).`,
@@ -367,14 +379,29 @@ export function TranslateTab({
           </span>
         </div>
 
-        <button
-          type="button"
-          onClick={() => void loadStatus(false)}
-          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-slate-50 dark:hover:bg-zinc-800 cursor-pointer"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-          Làm mới
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <TaskModelSelector
+            taskKey="translate_main"
+            value={modelOverride}
+            onChange={setModelOverride}
+          />
+          <button
+            type="button"
+            onClick={() => setMasksDrawerOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-slate-50 dark:hover:bg-zinc-800 cursor-pointer"
+          >
+            <ShieldAlert className="w-3.5 h-3.5 text-rose-500" />
+            Kho từ nhạy cảm
+          </button>
+          <button
+            type="button"
+            onClick={() => void loadStatus(false)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-slate-50 dark:hover:bg-zinc-800 cursor-pointer"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            Làm mới
+          </button>
+        </div>
       </div>
 
       {/* Banners */}
@@ -538,6 +565,32 @@ export function TranslateTab({
               className="rounded border-slate-300 text-indigo-600"
             />
             Bỏ qua chương đã hoàn thành
+          </label>
+
+          <label
+            className="inline-flex items-center gap-1.5 cursor-pointer text-slate-700 dark:text-zinc-300"
+            title="Áp dụng tự động Kho từ nhạy cảm lên bản tạm trước khi dịch (giữ nguyên raw gốc)"
+          >
+            <input
+              type="checkbox"
+              checked={preMask}
+              onChange={(e) => setPreMask(e.target.checked)}
+              className="rounded border-slate-300 text-amber-600"
+            />
+            <span>Pre-mask nhạy cảm</span>
+          </label>
+
+          <label
+            className="inline-flex items-center gap-1.5 cursor-pointer text-rose-700 dark:text-rose-300 font-medium"
+            title="Cấu hình safety_settings = BLOCK_NONE trên mọi danh mục hỗ trợ kèm ngữ cảnh dịch thuật văn học ngay từ lần đầu"
+          >
+            <input
+              type="checkbox"
+              checked={matureMode}
+              onChange={(e) => setMatureMode(e.target.checked)}
+              className="rounded border-rose-300 text-rose-600"
+            />
+            <span>Mature / R19 (BLOCK_NONE)</span>
           </label>
 
           {(mode === 'freeform' || mode === 'hybrid') && (
@@ -831,9 +884,32 @@ export function TranslateTab({
           onClose={() => setMaskChapter(null)}
           onAppliedAndRetranslated={(msg) => {
             notify(msg)
-            void loadStatus()
+            void loadStatus(false)
           }}
         />
+      )}
+
+      {/* Sensitive Masks Manager Modal */}
+      {masksDrawerOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/55 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-4xl max-h-[88vh] flex flex-col rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-200 dark:border-zinc-800 flex items-center justify-between">
+              <span className="font-bold text-sm text-slate-900 dark:text-zinc-100">
+                Quản lý Kho từ nhạy cảm
+              </span>
+              <button
+                type="button"
+                onClick={() => setMasksDrawerOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto">
+              <SensitiveMasksManager defaultSeries={selectedSeries} />
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

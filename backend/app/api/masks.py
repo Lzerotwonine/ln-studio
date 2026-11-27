@@ -1,4 +1,4 @@
-"""API routes for sensitive_masks dictionary and blocked chapter Scan & Mask."""
+"""API routes for sensitive_masks dictionary (multi-lang + bulk import) and blocked chapter Scan & Mask."""
 
 from __future__ import annotations
 
@@ -8,6 +8,9 @@ from app.core.gemini_pool import NoAvailableSlotsError
 from app.models.schemas import (
     ApplyMasksRequest,
     ApplyMasksResponse,
+    MaskSourceLang,
+    SensitiveMaskBulkImportRequest,
+    SensitiveMaskBulkImportResponse,
     SensitiveMaskCreate,
     SensitiveMaskResponse,
     SensitiveMaskUpdate,
@@ -15,9 +18,11 @@ from app.models.schemas import (
 )
 from app.services.mask_service import (
     apply_masks_to_chapter,
+    bulk_import_masks,
     delete_mask,
     list_masks,
     scan_sensitive_phrases,
+    seed_default_masks,
     update_mask,
     upsert_mask,
 )
@@ -29,8 +34,17 @@ router = APIRouter(prefix="/api", tags=["sensitive masks"])
 def get_masks(
     series_id: int | None = Query(default=None),
     include_global: bool = Query(default=True),
+    only_global: bool = Query(default=False),
+    source_lang: MaskSourceLang | None = Query(default=None),
+    search: str | None = Query(default=None),
 ) -> list[SensitiveMaskResponse]:
-    rows = list_masks(series_id=series_id, include_global=include_global)
+    rows = list_masks(
+        series_id=series_id,
+        include_global=include_global,
+        only_global=only_global,
+        source_lang=source_lang,
+        search=search,
+    )
     return [SensitiveMaskResponse(**r) for r in rows]
 
 
@@ -43,6 +57,7 @@ def create_sensitive_mask(payload: SensitiveMaskCreate) -> SensitiveMaskResponse
     try:
         row = upsert_mask(
             series_id=payload.series_id,
+            source_lang=payload.source_lang,
             raw_phrase=payload.raw_phrase,
             safe_replacement=payload.safe_replacement,
         )
@@ -53,6 +68,32 @@ def create_sensitive_mask(payload: SensitiveMaskCreate) -> SensitiveMaskResponse
     return SensitiveMaskResponse(**row)
 
 
+@router.post("/masks/bulk-import", response_model=SensitiveMaskBulkImportResponse)
+def import_sensitive_masks_bulk(
+    payload: SensitiveMaskBulkImportRequest,
+) -> SensitiveMaskBulkImportResponse:
+    try:
+        res = bulk_import_masks(
+            payload.text,
+            series_id=payload.series_id,
+            source_lang=payload.source_lang,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return SensitiveMaskBulkImportResponse(**res)
+
+
+@router.post("/masks/seed-default", response_model=SensitiveMaskBulkImportResponse)
+def seed_sensitive_masks_default() -> SensitiveMaskBulkImportResponse:
+    try:
+        res = seed_default_masks()
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return SensitiveMaskBulkImportResponse(**res)
+
+
 @router.patch("/masks/{mask_id}", response_model=SensitiveMaskResponse)
 def patch_sensitive_mask(
     mask_id: int, payload: SensitiveMaskUpdate
@@ -60,6 +101,7 @@ def patch_sensitive_mask(
     try:
         row = update_mask(
             mask_id,
+            source_lang=payload.source_lang,
             raw_phrase=payload.raw_phrase,
             safe_replacement=payload.safe_replacement,
         )
@@ -82,9 +124,12 @@ def remove_sensitive_mask(mask_id: int) -> None:
     "/chapters/{chapter_id}/scan-sensitive",
     response_model=SensitiveScanResponse,
 )
-def scan_chapter_sensitive(chapter_id: int) -> SensitiveScanResponse:
+def scan_chapter_sensitive(
+    chapter_id: int,
+    model_override: str | None = Query(default=None),
+) -> SensitiveScanResponse:
     try:
-        res = scan_sensitive_phrases(chapter_id)
+        res = scan_sensitive_phrases(chapter_id, model_override=model_override)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except NoAvailableSlotsError as exc:

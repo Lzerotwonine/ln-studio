@@ -20,6 +20,8 @@ from google.genai import types
 from app.core.database import (
     DEFAULT_MODEL_LIMITS,
     DEFAULT_MODELS,
+    DEFAULT_TASK_MODELS,
+    TASK_MODEL_KEYS,
     db_session,
     get_setting,
 )
@@ -187,13 +189,55 @@ class GeminiPool:
         ).fetchall()
         return [dict(r) for r in rows if (r["api_key"] or "").strip()]
 
+    def _load_task_models_map(self, conn: sqlite3.Connection) -> dict[str, dict[str, Any]]:
+        raw = get_setting(conn, "task_models", DEFAULT_TASK_MODELS)
+        merged: dict[str, dict[str, Any]] = {}
+        for key in TASK_MODEL_KEYS:
+            default_cfg = DEFAULT_TASK_MODELS[key]
+            entry = raw.get(key) if isinstance(raw, dict) else None
+            if isinstance(entry, dict):
+                primary = str(entry.get("primary") or default_cfg["primary"]).strip()
+                fallbacks = sanitize_models(entry.get("fallbacks"))
+                merged[key] = {
+                    "primary": primary or default_cfg["primary"],
+                    "fallbacks": [m for m in fallbacks if m != primary],
+                }
+            else:
+                merged[key] = {
+                    "primary": default_cfg["primary"],
+                    "fallbacks": list(default_cfg["fallbacks"]),
+                }
+        return merged
+
     def _load_models(
-        self, conn: sqlite3.Connection, override_models: Iterable[str] | None = None
+        self,
+        conn: sqlite3.Connection,
+        override_models: Iterable[str] | None = None,
+        task_type: str | None = None,
     ) -> list[str]:
         if override_models is not None:
-            return sanitize_models(override_models)
+            cleaned = sanitize_models(override_models)
+            if cleaned:
+                return cleaned
+        if task_type and task_type in TASK_MODEL_KEYS:
+            task_map = self._load_task_models_map(conn)
+            cfg = task_map.get(task_type)
+            if cfg:
+                ordered = sanitize_models([cfg["primary"], *cfg.get("fallbacks", [])])
+                if ordered:
+                    return ordered
         raw_models = get_setting(conn, "model_priority", DEFAULT_MODELS)
         return sanitize_models(raw_models if isinstance(raw_models, list) else DEFAULT_MODELS)
+
+    def _load_all_configured_models(self, conn: sqlite3.Connection) -> list[str]:
+        """Collect all models configured in global priority AND task_models for quota tracking."""
+        base = self._load_models(conn)
+        task_map = self._load_task_models_map(conn)
+        extra: list[str] = []
+        for cfg in task_map.values():
+            extra.append(cfg["primary"])
+            extra.extend(cfg.get("fallbacks", []))
+        return sanitize_models([*base, *extra])
 
     def _load_model_limits(self, conn: sqlite3.Connection) -> dict[str, dict[str, int]]:
         raw = get_setting(conn, "model_limits", DEFAULT_MODEL_LIMITS)
@@ -319,7 +363,7 @@ class GeminiPool:
 
         with db_session(self.db_path) as conn:
             active_keys = self._load_active_keys(conn)
-            models = self._load_models(conn)
+            models = self._load_all_configured_models(conn)
             limits_map = self._load_model_limits(conn)
             self._ensure_and_rollover_slots(conn, active_keys, models, today)
 
@@ -486,6 +530,8 @@ class GeminiPool:
         max_output_tokens: int | None = None,
         response_mime_type: str | None = None,
         response_schema: Any = None,
+        safety_settings: list[Any] | None = None,
+        task_type: str | None = None,
         models: Iterable[str] | None = None,
         max_503_rounds_per_model: int = 1,
     ) -> PoolResponse:
@@ -493,7 +539,9 @@ class GeminiPool:
         today = self._today_fn()
         with db_session(self.db_path) as conn:
             active_keys = self._load_active_keys(conn)
-            target_models = self._load_models(conn, override_models=models)
+            target_models = self._load_models(
+                conn, override_models=models, task_type=task_type
+            )
             limits_map = self._load_model_limits(conn)
             if not active_keys:
                 raise NoAvailableSlotsError("Không có API Key nào đang hoạt động.")
@@ -512,6 +560,8 @@ class GeminiPool:
             config_kwargs["response_mime_type"] = response_mime_type
         if response_schema is not None:
             config_kwargs["response_schema"] = response_schema
+        if safety_settings is not None:
+            config_kwargs["safety_settings"] = safety_settings
         gen_config = types.GenerateContentConfig(**config_kwargs) if config_kwargs else None
 
         attempts = 0

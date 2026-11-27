@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import threading
 import xml.etree.ElementTree as ET
 from abc import ABC, abstractmethod
@@ -14,14 +15,77 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, AsyncIterator, Callable
 
+from google.genai import types
+
 from app.core.database import PROJECT_ROOT, db_session
 from app.core.gemini_pool import GeminiPool, NoAvailableSlotsError, gemini_pool
 from app.services.continuity_service import build_relevant_context
+from app.services.mask_service import apply_masks_to_chapter
+from app.services.reference_service import load_active_reference_block
 
 logger = logging.getLogger(__name__)
 
 PROMPTS_LN_VN_DIR = PROJECT_ROOT / "data" / "prompts" / "ln_vn"
 MIN_CHAR_RATIO = 0.30
+
+_MD_IMAGE_TAG_RE = re.compile(r"!\[[^\]]*\]\(/api/media/vol_\d+/[^/\s)]+\)")
+_IMAGE_MARKER_RULE = (
+    "\n[QUY TẮC ẢNH MINH HỌA]: Văn bản có chứa mã giữ chỗ ảnh dạng [[IMAGE_001]], [[IMAGE_002]]... "
+    "PHẢI giữ nguyên chính xác 100% từng mã giữ chỗ này ở đúng vị trí tương ứng trên dòng riêng; "
+    "KHÔNG dịch, KHÔNG sửa ký tự, KHÔNG xóa hay nhân bản mã ảnh."
+)
+
+
+def build_mature_safety_settings() -> list[types.SafetySetting]:
+    """Build BLOCK_NONE safety settings across all supported text HarmCategories for Mature/R19 mode."""
+    categories = (
+        types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+        types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+        types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+        types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+        types.HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY,
+    )
+    return [
+        types.SafetySetting(
+            category=cat,
+            threshold=types.HarmBlockThreshold.BLOCK_NONE,
+        )
+        for cat in categories
+    ]
+
+
+def protect_image_markers(text: str) -> tuple[str, list[str]]:
+    """Replace Markdown image tags with compact [[IMAGE_NNN]] markers before LLM translation."""
+    images: list[str] = []
+
+    def _repl(match: re.Match[str]) -> str:
+        images.append(match.group(0))
+        return f"[[IMAGE_{len(images):03d}]]"
+
+    protected = _MD_IMAGE_TAG_RE.sub(_repl, text)
+    return protected, images
+
+
+def restore_image_markers(translated: str, images: list[str]) -> tuple[str, int]:
+    """Restore [[IMAGE_NNN]] markers back to exact original Markdown image tags."""
+    if not images:
+        return translated, 0
+
+    restored = translated
+    missing_tags: list[str] = []
+    for idx, original_md in enumerate(images, start=1):
+        # Tolerate minor formatting drift like **[[IMAGE_001]]** or [[ IMAGE_001 ]]
+        pattern = re.compile(
+            rf"(?:\*\*)?\[\[\s*IMAGE_0*{idx}\s*\]\](?:\*\*)?",
+            re.IGNORECASE,
+        )
+        restored, count = pattern.subn(lambda _m, md=original_md: md, restored, count=1)
+        if count == 0:
+            missing_tags.append(original_md)
+
+    if missing_tags:
+        restored = restored.rstrip() + "\n\n" + "\n\n".join(missing_tags)
+    return restored, len(missing_tags)
 
 _PULSE_TAG = '<PULSE mode="STRICT_ADHERENCE" check="SAFETY_FIDELITY_VOICE"/>'
 _FICTION_CONTEXT_BLOCK = (
@@ -88,6 +152,9 @@ class TranslationOptions:
     temperature: float = 0.7
     hybrid_config: HybridOptions | None = None
     system_prompt_override: str | None = None
+    pre_mask: bool = False
+    mature_mode: bool = False
+    model_override: str | None = None
 
 
 @dataclass
@@ -108,9 +175,15 @@ class ChapterTranslationContext:
     masked_raw_text: str | None
     previous_translated_text: str
     relevant_context: dict[str, Any]
+    reference_block: str = ""
+    reference_files_used: list[str] = field(default_factory=list)
+    protected_images: list[str] = field(default_factory=list)
+    protected_source_text: str = ""
 
     @property
     def effective_source_text(self) -> str:
+        if self.protected_source_text:
+            return self.protected_source_text
         if self.masked_raw_text and self.masked_raw_text.strip():
             return self.masked_raw_text
         return self.raw_text
@@ -267,6 +340,10 @@ class LnVnStrategy(BaseTranslationStrategy):
             if options.system_prompt_override is not None and options.system_prompt_override.strip()
             else _load_master_prompt_xml(ctx.master_prompt_file)
         )
+        if ctx.reference_block:
+            system_instruction = f"{system_instruction}\n\n{ctx.reference_block}"
+        if ctx.protected_images:
+            system_instruction = f"{system_instruction}\n{_IMAGE_MARKER_RULE}"
         hybrid = options.hybrid_config or ctx.series_hybrid_config
         rolling = _extract_rolling_context(
             ctx.previous_translated_text, hybrid.rolling_context_lines
@@ -310,6 +387,8 @@ class FreeformStrategy(BaseTranslationStrategy):
             or ctx.series_system_prompt.strip()
             or _DEFAULT_FREEFORM_PROMPT
         )
+        if ctx.protected_images:
+            system_instruction = f"{system_instruction}\n{_IMAGE_MARKER_RULE}"
         cfg = options.hybrid_config or ctx.series_hybrid_config
         rolling = _extract_rolling_context(
             ctx.previous_translated_text, cfg.rolling_context_lines
@@ -364,6 +443,8 @@ class HybridStrategy(BaseTranslationStrategy):
             "Tuân thủ nghiêm ngặt các khối ngữ cảnh được cung cấp trong <BOOK_CONTEXT> (nếu có) "
             "và dịch đầy đủ 1:1 toàn bộ <RAW_TEXT> sang tiếng Việt."
         )
+        if ctx.protected_images:
+            system_instruction = f"{system_instruction}\n{_IMAGE_MARKER_RULE}"
         cfg = options.hybrid_config or ctx.series_hybrid_config
         rolling = _extract_rolling_context(
             ctx.previous_translated_text, cfg.rolling_context_lines
@@ -457,7 +538,9 @@ def _load_chapter_context(
         if row["masked_raw_text"] and str(row["masked_raw_text"]).strip()
         else str(row["raw_text"])
     )
+    protected_text, protected_images = protect_image_markers(effective_text)
     rel_ctx = build_relevant_context(int(row["volume_id"]), effective_text, db_path=db_path)
+    ref_block, ref_files = load_active_reference_block(phase="translate", db_path=db_path)
 
     return ChapterTranslationContext(
         chapter_id=int(row["chapter_id"]),
@@ -476,6 +559,10 @@ def _load_chapter_context(
         masked_raw_text=str(row["masked_raw_text"]) if row["masked_raw_text"] else None,
         previous_translated_text=prev_translated,
         relevant_context=rel_ctx,
+        reference_block=ref_block,
+        reference_files_used=ref_files,
+        protected_images=protected_images,
+        protected_source_text=protected_text,
     )
 
 
@@ -538,6 +625,14 @@ def translate_single_chapter(
         if log_cb:
             log_cb(level, message)
 
+    if opts.pre_mask:
+        pre_res = apply_masks_to_chapter(chapter_id, save_to_db=False, db_path=db_path)
+        if pre_res.get("applied_count", 0) > 0:
+            _log(
+                "info",
+                f"[Chương {chapter_id}] Pre-mask tự động thay thế {pre_res['applied_count']} cụm từ nhạy cảm (raw_text gốc giữ nguyên).",
+            )
+
     ctx = _load_chapter_context(chapter_id, db_path=db_path)
     effective_mode = opts.mode or ctx.series_mode
     strategy = get_translation_strategy(effective_mode)
@@ -555,12 +650,15 @@ def translate_single_chapter(
     _log(
         "info",
         f"[Chương {ctx.chapter_index}] Bắt đầu dịch (chế độ={effective_mode}, temp={opts.temperature}"
+        f"{', Mature/R19 BLOCK_NONE' if opts.mature_mode else ''}"
         f"{', đang dùng bản đã che từ nhạy cảm' if ctx.using_masked_text else ''})...",
     )
 
     last_ratio = 0.0
     last_slot: str | None = None
     last_reason = ""
+    safety_cfg = build_mature_safety_settings() if opts.mature_mode else None
+    override_models = [opts.model_override] if opts.model_override and opts.model_override.strip() else None
 
     for attempt in (1, 2):
         fiction_retry = attempt == 2
@@ -569,14 +667,28 @@ def translate_single_chapter(
                 "warn",
                 f"[Chương {ctx.chapter_index}] Thử lại lần 2 kèm <FICTION_CONTEXT> (lý do lần 1: {last_reason})...",
             )
-        built = strategy.build_prompt(ctx, opts, fiction_retry=fiction_retry)
+        built = strategy.build_prompt(
+            ctx, opts, fiction_retry=(fiction_retry or opts.mature_mode)
+        )
         try:
             resp = active_pool.generate_content(
                 built.user_prompt,
                 system_instruction=built.system_instruction,
                 temperature=opts.temperature,
+                safety_settings=safety_cfg,
+                task_type="translate_main",
+                models=override_models,
             )
             translated = (resp.text or "").strip()
+            if ctx.protected_images and translated:
+                translated, dropped_imgs = restore_image_markers(
+                    translated, ctx.protected_images
+                )
+                if dropped_imgs > 0:
+                    _log(
+                        "warn",
+                        f"[Chương {ctx.chapter_index}] AI làm rơi {dropped_imgs} mã ảnh, đã tự khôi phục về cuối chương.",
+                    )
             last_slot = resp.slot_id
             last_ratio = _compute_char_ratio(ctx.effective_source_text, translated)
 

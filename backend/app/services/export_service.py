@@ -20,9 +20,26 @@ from ebooklib import epub
 from app.core.database import db_session
 from app.core.gemini_pool import GeminiPool, gemini_pool
 from app.services.continuity_service import build_relevant_context
+from app.services.epub_service import get_volume_media_dir
 from app.services.languages.base import normalize_term_key
 
 ALLOWED_DOCX_FONTS = {"Times New Roman", "Cambria"}
+
+_MD_IMAGE_LINE_RE = re.compile(
+    r"^!\[(?P<alt>[^\]]*)\]\(/api/media/vol_(?P<vol>\d+)/(?P<fname>[^/\s)]+)\)$"
+)
+_MD_INLINE_RE = re.compile(
+    r"(\*\*\*[^*\n]+?\*\*\*|\*\*[^*\n]+?\*\*|\*[^*\n]+?\*)"
+)
+_DOCX_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff"}
+_MEDIA_TYPE_BY_EXT = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".bmp": "image/bmp",
+}
 
 _EPUB_CSS = """
 body {
@@ -48,7 +65,70 @@ p {
   color: #555555;
   font-style: italic;
 }
+.illustration {
+  text-align: center;
+  text-indent: 0;
+  margin: 1.2em 0;
+}
+.illustration img {
+  max-width: 100%;
+  height: auto;
+}
 """
+
+
+def _resolve_media_path(vol_id: int, filename: str) -> Path | None:
+    if "/" in filename or "\\" in filename or ".." in filename:
+        return None
+    media_dir = get_volume_media_dir(vol_id).resolve()
+    candidate = (media_dir / filename).resolve()
+    try:
+        candidate.relative_to(media_dir)
+    except ValueError:
+        return None
+    return candidate if candidate.is_file() else None
+
+
+def _add_markdown_runs_to_paragraph(paragraph: Any, text: str, font_name: str) -> None:
+    """Render inline ***bold italic***, **bold**, *italic* cleanly as native Word runs."""
+    parts = _MD_INLINE_RE.split(text)
+    for part in parts:
+        if not part:
+            continue
+        bold = False
+        italic = False
+        content = part
+        if part.startswith("***") and part.endswith("***") and len(part) > 6:
+            bold = True
+            italic = True
+            content = part[3:-3]
+        elif part.startswith("**") and part.endswith("**") and len(part) > 4:
+            bold = True
+            content = part[2:-2]
+        elif part.startswith("*") and part.endswith("*") and len(part) > 2:
+            italic = True
+            content = part[1:-1]
+        run = paragraph.add_run(content)
+        run.bold = bold
+        run.italic = italic
+        _set_run_font_all_scripts(run, font_name)
+
+
+def _markdown_inline_to_html(text: str) -> str:
+    """Escape HTML and render ***bold italic***, **bold**, *italic* to safe XHTML tags."""
+    out: list[str] = []
+    for part in _MD_INLINE_RE.split(text):
+        if not part:
+            continue
+        if part.startswith("***") and part.endswith("***") and len(part) > 6:
+            out.append(f"<strong><em>{html.escape(part[3:-3])}</em></strong>")
+        elif part.startswith("**") and part.endswith("**") and len(part) > 4:
+            out.append(f"<strong>{html.escape(part[2:-2])}</strong>")
+        elif part.startswith("*") and part.endswith("*") and len(part) > 2:
+            out.append(f"<em>{html.escape(part[1:-1])}</em>")
+        else:
+            out.append(html.escape(part))
+    return "".join(out)
 
 _SELECTION_RETRANSLATE_SYSTEM = """Bạn là biên tập viên và dịch giả Light Novel tiếng Việt chuyên nghiệp.
 Nhiệm vụ: Dịch lại hoặc biên tập trau chuốt CHÍNH XÁC đoạn văn bản được người dùng bôi đen, dựa trên văn bản gốc của chương, bảng thuật ngữ và xưng hô đã chốt.
@@ -195,9 +275,26 @@ def export_volume_docx(
 
         paragraphs = [p.strip() for p in re.split(r"\r?\n+", body_text) if p.strip()]
         for para_text in paragraphs:
-            p = doc.add_paragraph(para_text, style="Normal")
+            img_match = _MD_IMAGE_LINE_RE.match(para_text)
+            if img_match:
+                img_path = _resolve_media_path(
+                    int(img_match.group("vol")), img_match.group("fname")
+                )
+                if img_path is not None and img_path.suffix.lower() in _DOCX_IMAGE_EXTS:
+                    img_p = doc.add_paragraph()
+                    img_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    img_p.paragraph_format.first_line_indent = Cm(0)
+                    img_p.paragraph_format.space_before = Pt(6)
+                    img_p.paragraph_format.space_after = Pt(6)
+                    try:
+                        img_p.add_run().add_picture(str(img_path), width=Cm(14))
+                        continue
+                    except Exception:
+                        pass
+            p = doc.add_paragraph(style="Normal")
             p.paragraph_format.line_spacing = line_spacing
             p.paragraph_format.first_line_indent = Cm(0.8)
+            _add_markdown_runs_to_paragraph(p, para_text, chosen_font)
 
     buf = io.BytesIO()
     doc.save(buf)
@@ -232,6 +329,7 @@ def export_volume_epub(
 
     epub_chapters: list[epub.EpubHtml] = []
     toc_links: list[epub.Link] = []
+    embedded_images: dict[str, str] = {}
 
     for ch in chapters:
         idx = int(ch["chapter_index"])
@@ -243,11 +341,39 @@ def export_volume_epub(
 
         body_text = (ch["translated_text"] or "").strip()
         if body_text:
-            para_html = "\n".join(
-                f"<p>{html.escape(line.strip())}</p>"
-                for line in re.split(r"\r?\n+", body_text)
-                if line.strip()
-            )
+            html_blocks: list[str] = []
+            for raw_line in re.split(r"\r?\n+", body_text):
+                line = raw_line.strip()
+                if not line:
+                    continue
+                img_match = _MD_IMAGE_LINE_RE.match(line)
+                if img_match:
+                    vol_ref = int(img_match.group("vol"))
+                    fname = img_match.group("fname")
+                    alt = img_match.group("alt") or fname
+                    img_path = _resolve_media_path(vol_ref, fname)
+                    if img_path is not None:
+                        cache_key = f"{vol_ref}/{fname}"
+                        if cache_key not in embedded_images:
+                            epub_img_name = f"images/{fname}"
+                            media_type = _MEDIA_TYPE_BY_EXT.get(
+                                img_path.suffix.lower(), "image/jpeg"
+                            )
+                            img_item = epub.EpubImage(
+                                uid=f"img_{len(embedded_images) + 1}",
+                                file_name=epub_img_name,
+                                media_type=media_type,
+                                content=img_path.read_bytes(),
+                            )
+                            book.add_item(img_item)
+                            embedded_images[cache_key] = epub_img_name
+                        href = embedded_images[cache_key]
+                        html_blocks.append(
+                            f'<div class="illustration"><img src="{html.escape(href)}" alt="{html.escape(alt)}" /></div>'
+                        )
+                        continue
+                html_blocks.append(f"<p>{_markdown_inline_to_html(line)}</p>")
+            para_html = "\n".join(html_blocks)
         else:
             para_html = '<p class="subtitle">[Chương này chưa có bản dịch.]</p>'
 
@@ -500,6 +626,7 @@ def retranslate_selection(
     source_side: str = "translated",
     instruction: str = "",
     temperature: float = 0.5,
+    model_override: str | None = None,
     pool: GeminiPool | None = None,
     db_path: Path | str | None = None,
 ) -> dict[str, Any]:
@@ -572,6 +699,8 @@ def retranslate_selection(
         prompt,
         system_instruction=system_inst,
         temperature=temperature,
+        task_type="proofread_retranslate",
+        models=[model_override] if model_override and model_override.strip() else None,
     )
     cleaned_out = (resp.text or "").strip()
     if cleaned_out.startswith("<<<") and cleaned_out.endswith(">>>"):

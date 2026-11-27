@@ -4,16 +4,20 @@ import {
   ArrowUp,
   Cpu,
   Edit3,
+  FileCode2,
   KeyRound,
   Plus,
   RefreshCw,
   RotateCcw,
   Save,
+  ShieldAlert,
   Sparkles,
   Trash2,
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
+import { ReferencePacksManager } from '../components/ReferencePacksManager'
+import { SensitiveMasksManager } from '../components/SensitiveMasksManager'
 import {
   createApiKey,
   createPreset,
@@ -24,11 +28,13 @@ import {
   fetchModelConfig,
   fetchPresets,
   fetchQuotaStatus,
+  fetchTaskModels,
   resetQuota,
   seedDefaultPresets,
   updateApiKey,
   updateModelConfig,
   updatePreset,
+  updateTaskModels,
 } from '../lib/api'
 import type {
   ApiKeyItem,
@@ -39,11 +45,20 @@ import type {
   QuotaSlot,
   QuotaSlotState,
   QuotaSummary,
+  Series,
+  TaskModelAssignment,
+  TaskModelKey,
   TranslationMode,
 } from '../types'
-import { MODE_META } from '../types'
+import { MODE_META, TASK_MODEL_META } from '../types'
 
-type SettingsTab = 'keys' | 'models' | 'quota' | 'presets'
+type SettingsTab =
+  | 'keys'
+  | 'models'
+  | 'quota'
+  | 'presets'
+  | 'masks'
+  | 'references'
 
 const SUGGESTED_MODELS = [
   'gemini-2.5-flash',
@@ -78,7 +93,11 @@ const PRESET_LANG_LABELS: Record<PresetSourceLang, string> = {
   any: 'Đa ngôn ngữ',
 }
 
-export function SettingsPage() {
+interface SettingsPageProps {
+  selectedSeries?: Series | null
+}
+
+export function SettingsPage({ selectedSeries = null }: SettingsPageProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>('keys')
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [toastMsg, setToastMsg] = useState<string | null>(null)
@@ -96,6 +115,35 @@ export function SettingsPage() {
   >({})
   const [newModelInput, setNewModelInput] = useState('')
   const [savingModels, setSavingModels] = useState(false)
+  const [taskModels, setTaskModels] = useState<
+    Record<TaskModelKey, TaskModelAssignment>
+  >({
+    glossary_translate: {
+      primary: 'gemini-2.5-flash',
+      fallbacks: ['gemini-2.0-flash'],
+    },
+    continuity_map: {
+      primary: 'gemini-2.5-flash-lite',
+      fallbacks: ['gemini-2.5-flash'],
+    },
+    continuity_reduce: {
+      primary: 'gemini-2.5-flash',
+      fallbacks: ['gemini-2.5-pro'],
+    },
+    translate_main: {
+      primary: 'gemini-2.5-pro',
+      fallbacks: ['gemini-2.5-flash'],
+    },
+    sensitive_scan: {
+      primary: 'gemini-2.5-flash-lite',
+      fallbacks: ['gemini-2.5-flash'],
+    },
+    proofread_retranslate: {
+      primary: 'gemini-2.5-flash',
+      fallbacks: ['gemini-2.5-pro'],
+    },
+  })
+  const [savingTaskModels, setSavingTaskModels] = useState(false)
 
   // Quota state
   const [quotaSlots, setQuotaSlots] = useState<QuotaSlot[]>([])
@@ -145,15 +193,20 @@ export function SettingsPage() {
   const loadAll = useCallback(async () => {
     setErrorMsg(null)
     try {
-      const [keysData, modelsData, quotaData, presetsData] = await Promise.all([
-        fetchApiKeys(),
-        fetchModelConfig(),
-        fetchQuotaStatus(),
-        fetchPresets(),
-      ])
+      const [keysData, modelsData, taskModelsData, quotaData, presetsData] =
+        await Promise.all([
+          fetchApiKeys(),
+          fetchModelConfig(),
+          fetchTaskModels(),
+          fetchQuotaStatus(),
+          fetchPresets(),
+        ])
       setApiKeys(keysData)
       setModels(modelsData.models)
       setModelLimits(modelsData.model_limits)
+      if (taskModelsData?.tasks) {
+        setTaskModels(taskModelsData.tasks)
+      }
       setQuotaSlots(quotaData.slots)
       setQuotaSummary(quotaData.summary)
       setPresets(presetsData)
@@ -299,6 +352,79 @@ export function SettingsPage() {
     }
   }
 
+  const handleSaveTaskModels = async () => {
+    setSavingTaskModels(true)
+    setErrorMsg(null)
+    try {
+      const saved = await updateTaskModels(taskModels)
+      setTaskModels(saved.tasks)
+      notify('Đã lưu cấu hình phân bổ Model theo 6 tác vụ.')
+      void refreshQuota()
+    } catch (err) {
+      setErrorMsg(extractErrorMessage(err))
+    } finally {
+      setSavingTaskModels(false)
+    }
+  }
+
+  const applyTaskPreset = (preset: 'economy' | 'quality') => {
+    if (preset === 'economy') {
+      setTaskModels({
+        translate_main: {
+          primary: 'gemini-2.5-flash',
+          fallbacks: ['gemini-2.0-flash'],
+        },
+        glossary_translate: {
+          primary: 'gemini-2.5-flash-lite',
+          fallbacks: ['gemini-2.5-flash'],
+        },
+        continuity_map: {
+          primary: 'gemini-2.5-flash-lite',
+          fallbacks: ['gemini-2.0-flash'],
+        },
+        continuity_reduce: {
+          primary: 'gemini-2.5-flash',
+          fallbacks: ['gemini-2.0-flash'],
+        },
+        sensitive_scan: {
+          primary: 'gemini-2.5-flash-lite',
+          fallbacks: ['gemini-2.5-flash'],
+        },
+        proofread_retranslate: {
+          primary: 'gemini-2.5-flash',
+          fallbacks: ['gemini-2.0-flash'],
+        },
+      })
+    } else {
+      setTaskModels({
+        translate_main: {
+          primary: 'gemini-2.5-pro',
+          fallbacks: ['gemini-2.5-flash'],
+        },
+        glossary_translate: {
+          primary: 'gemini-2.5-flash',
+          fallbacks: ['gemini-2.5-pro'],
+        },
+        continuity_map: {
+          primary: 'gemini-2.5-flash',
+          fallbacks: ['gemini-2.5-flash-lite'],
+        },
+        continuity_reduce: {
+          primary: 'gemini-2.5-pro',
+          fallbacks: ['gemini-2.5-flash'],
+        },
+        sensitive_scan: {
+          primary: 'gemini-2.5-flash',
+          fallbacks: ['gemini-2.5-flash-lite'],
+        },
+        proofread_retranslate: {
+          primary: 'gemini-2.5-pro',
+          fallbacks: ['gemini-2.5-flash'],
+        },
+      })
+    }
+  }
+
   // ---------- Quota Handlers ----------
 
   const handleResetQuota = async (slotId?: string) => {
@@ -398,6 +524,8 @@ export function SettingsPage() {
       { id: 'models', label: 'Model ưu tiên', icon: Cpu },
       { id: 'quota', label: 'Trạng thái Quota', icon: Activity },
       { id: 'presets', label: 'Prompt Presets', icon: Sparkles },
+      { id: 'masks', label: 'Kho từ nhạy cảm', icon: ShieldAlert },
+      { id: 'references', label: 'Reference Packs', icon: FileCode2 },
     ]
 
   return (
@@ -580,6 +708,7 @@ export function SettingsPage() {
 
       {/* TAB 2: MODELS */}
       {activeTab === 'models' && (
+        <div className="space-y-6">
         <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 space-y-5 shadow-xs">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -732,6 +861,149 @@ export function SettingsPage() {
               })
             )}
           </div>
+        </div>
+
+        {/* Task-based Model Routing Card */}
+        <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 space-y-4 shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-semibold text-slate-900 dark:text-zinc-100">
+                Phân bổ Model AI theo từng Tác vụ (6 tác vụ)
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
+                Tránh lãng phí model nặng cho tác vụ nhẹ. Bạn vẫn có thể đổi
+                nhanh model ngay trên từng tab trước khi chạy.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => applyTaskPreset('economy')}
+                className="px-3 py-1.5 rounded-xl text-xs font-medium border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50/70 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 cursor-pointer"
+              >
+                Tiết kiệm Quota
+              </button>
+              <button
+                type="button"
+                onClick={() => applyTaskPreset('quality')}
+                className="px-3 py-1.5 rounded-xl text-xs font-medium border border-indigo-200 dark:border-indigo-500/30 bg-indigo-50/70 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 cursor-pointer"
+              >
+                Chất lượng Tối đa
+              </button>
+              <button
+                type="button"
+                disabled={savingTaskModels}
+                onClick={() => void handleSaveTaskModels()}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white cursor-pointer"
+              >
+                <Save className="w-3.5 h-3.5" />
+                {savingTaskModels ? 'Đang lưu...' : 'Lưu phân bổ tác vụ'}
+              </button>
+            </div>
+          </div>
+
+          <div className="divide-y divide-slate-100 dark:divide-zinc-800 border border-slate-200 dark:border-zinc-800 rounded-xl overflow-hidden">
+            {TASK_MODEL_META.map((meta) => {
+              const cfg = taskModels[meta.key] ?? {
+                primary: 'gemini-2.5-flash',
+                fallbacks: [],
+              }
+              const modelChoices = Array.from(
+                new Set([
+                  ...models,
+                  ...SUGGESTED_MODELS,
+                  cfg.primary,
+                  ...cfg.fallbacks,
+                ]),
+              )
+              return (
+                <div
+                  key={meta.key}
+                  className="p-3.5 grid grid-cols-1 lg:grid-cols-12 gap-3 items-center bg-white dark:bg-zinc-900"
+                >
+                  <div className="lg:col-span-5">
+                    <div className="font-semibold text-xs text-slate-900 dark:text-zinc-100">
+                      {meta.label}{' '}
+                      <span className="font-mono text-[10px] text-slate-400">
+                        ({meta.key})
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 dark:text-zinc-400">
+                      {meta.desc}
+                    </div>
+                  </div>
+
+                  <div className="lg:col-span-3">
+                    <label className="block text-[10px] font-semibold uppercase text-slate-400 mb-1">
+                      Model ưu tiên
+                    </label>
+                    <select
+                      aria-label={`Model ưu tiên cho ${meta.key}`}
+                      value={cfg.primary}
+                      onChange={(e) =>
+                        setTaskModels((prev) => ({
+                          ...prev,
+                          [meta.key]: {
+                            ...cfg,
+                            primary: e.target.value,
+                            fallbacks: cfg.fallbacks.filter(
+                              (m) => m !== e.target.value,
+                            ),
+                          },
+                        }))
+                      }
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950 font-mono text-xs"
+                    >
+                      {modelChoices.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="lg:col-span-4">
+                    <label className="block text-[10px] font-semibold uppercase text-slate-400 mb-1">
+                      Model dự phòng (phân tách bằng dấu phẩy)
+                    </label>
+                    <input
+                      type="text"
+                      value={cfg.fallbacks.join(', ')}
+                      onChange={(e) =>
+                        setTaskModels((prev) => ({
+                          ...prev,
+                          [meta.key]: {
+                            ...cfg,
+                            fallbacks: e.target.value
+                              .split(',')
+                              .map((s) => s.trim())
+                              .filter(Boolean),
+                          },
+                        }))
+                      }
+                      placeholder="VD: gemini-2.5-flash, gemini-2.0-flash"
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950 font-mono text-xs"
+                    />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+        </div>
+      )}
+
+      {/* TAB 5: SENSITIVE MASKS */}
+      {activeTab === 'masks' && (
+        <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-xs">
+          <SensitiveMasksManager defaultSeries={selectedSeries} />
+        </div>
+      )}
+
+      {/* TAB 6: LN-VN REFERENCE PACKS */}
+      {activeTab === 'references' && (
+        <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-xs">
+          <ReferencePacksManager />
         </div>
       )}
 

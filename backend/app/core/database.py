@@ -22,8 +22,45 @@ DEFAULT_MODELS: list[str] = [
 DEFAULT_MODEL_LIMITS: dict[str, dict[str, int]] = {
     "default": {"rpm": 10, "rpd": 250},
     "gemini-2.5-flash": {"rpm": 10, "rpd": 250},
+    "gemini-2.5-flash-lite": {"rpm": 15, "rpd": 1000},
     "gemini-2.5-pro": {"rpm": 5, "rpd": 100},
     "gemini-2.0-flash": {"rpm": 15, "rpd": 1500},
+}
+
+TASK_MODEL_KEYS: tuple[str, ...] = (
+    "glossary_translate",
+    "continuity_map",
+    "continuity_reduce",
+    "translate_main",
+    "sensitive_scan",
+    "proofread_retranslate",
+)
+
+DEFAULT_TASK_MODELS: dict[str, dict[str, Any]] = {
+    "glossary_translate": {
+        "primary": "gemini-2.5-flash",
+        "fallbacks": ["gemini-2.0-flash", "gemini-2.5-flash-lite"],
+    },
+    "continuity_map": {
+        "primary": "gemini-2.5-flash-lite",
+        "fallbacks": ["gemini-2.5-flash", "gemini-2.0-flash"],
+    },
+    "continuity_reduce": {
+        "primary": "gemini-2.5-flash",
+        "fallbacks": ["gemini-2.5-pro", "gemini-2.0-flash"],
+    },
+    "translate_main": {
+        "primary": "gemini-2.5-pro",
+        "fallbacks": ["gemini-2.5-flash", "gemini-2.0-flash"],
+    },
+    "sensitive_scan": {
+        "primary": "gemini-2.5-flash-lite",
+        "fallbacks": ["gemini-2.5-flash"],
+    },
+    "proofread_retranslate": {
+        "primary": "gemini-2.5-flash",
+        "fallbacks": ["gemini-2.5-pro", "gemini-2.0-flash"],
+    },
 }
 
 DEFAULT_PROMPT_PRESETS: list[dict[str, str]] = [
@@ -188,11 +225,45 @@ def init_db(db_path: Path | str | None = None) -> Path:
             """
         )
 
-        # Seed default model priority list and limits if absent
+        # Seed default model priority list, limits, and task-based routing if absent
         if get_setting(conn, "model_priority") is None:
             set_setting(conn, "model_priority", DEFAULT_MODELS)
         if get_setting(conn, "model_limits") is None:
             set_setting(conn, "model_limits", DEFAULT_MODEL_LIMITS)
+        if get_setting(conn, "task_models") is None:
+            set_setting(conn, "task_models", DEFAULT_TASK_MODELS)
+
+        # Idempotent schema migration: sensitive_masks.source_lang
+        sm_cols = {
+            r["name"] for r in conn.execute("PRAGMA table_info(sensitive_masks)").fetchall()
+        }
+        if "source_lang" not in sm_cols:
+            conn.execute(
+                "ALTER TABLE sensitive_masks ADD COLUMN source_lang TEXT NOT NULL DEFAULT 'all'"
+            )
+
+        # Idempotent schema migration: reference_files table
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS reference_files (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                pack_name TEXT NOT NULL DEFAULT 'LN-VN Core',
+                filename TEXT NOT NULL,
+                content TEXT NOT NULL,
+                use_in_summary INTEGER NOT NULL DEFAULT 0,
+                use_in_translate INTEGER NOT NULL DEFAULT 1,
+                is_active INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(pack_name, filename)
+            )
+            """
+        )
+
+        # Auto-seed LN-VN reference files from data/prompts/ln_vn/references/ if table is empty
+        from app.services.reference_service import seed_reference_files_from_disk
+
+        seed_reference_files_from_disk(conn, force_sync=False)
 
         # Migrate legacy preset naming cleanly if an existing DB has the old default name
         freeform_default = DEFAULT_PROMPT_PRESETS[1]

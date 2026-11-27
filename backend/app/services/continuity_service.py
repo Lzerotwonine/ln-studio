@@ -204,6 +204,7 @@ def run_map_phase(
     *,
     force_rerun: bool = False,
     chapter_ids: list[int] | None = None,
+    model_override: str | None = None,
     pool: GeminiPool | None = None,
     db_path: Path | str | None = None,
 ) -> dict[str, Any]:
@@ -213,7 +214,8 @@ def run_map_phase(
     with db_session(db_path) as conn:
         vol_row = conn.execute(
             """
-            SELECT v.id, v.series_id, v.volume_number, v.title, s.title AS series_title, s.source_lang
+            SELECT v.id, v.series_id, v.volume_number, v.title,
+                   s.title AS series_title, s.source_lang, s.translation_mode
             FROM volumes v
             JOIN series s ON s.id = v.series_id
             WHERE v.id = ?
@@ -321,12 +323,24 @@ def run_map_phase(
             f"Nội dung chương gốc:\n{ch['raw_text']}"
         )
 
+        map_system = _MAP_SYSTEM_PROMPT
+        if str(vol_row["translation_mode"] or "") == "ln_vn":
+            from app.services.reference_service import load_active_reference_block
+
+            summary_ref_block, _ = load_active_reference_block(
+                phase="summary", db_path=db_path
+            )
+            if summary_ref_block:
+                map_system = f"{map_system}\n\n{summary_ref_block}"
+
         resp = active_pool.generate_content(
             prompt,
-            system_instruction=_MAP_SYSTEM_PROMPT,
+            system_instruction=map_system,
             temperature=0.2,
             response_mime_type="application/json",
             response_schema=ChapterMapSchema,
+            task_type="continuity_map",
+            models=[model_override] if model_override and model_override.strip() else None,
         )
         if resp.slot_id not in used_slots:
             used_slots.append(resp.slot_id)
@@ -376,6 +390,7 @@ def run_reduce_and_merge(
     volume_id: int,
     *,
     skip_ai_summary: bool = False,
+    model_override: str | None = None,
     pool: GeminiPool | None = None,
     db_path: Path | str | None = None,
 ) -> dict[str, Any]:
@@ -386,7 +401,7 @@ def run_reduce_and_merge(
         vol_row = conn.execute(
             """
             SELECT v.id, v.series_id, v.volume_number, v.title, v.rtas_baseline,
-                   s.title AS series_title, s.source_lang
+                   s.title AS series_title, s.source_lang, s.translation_mode
             FROM volumes v
             JOIN series s ON s.id = v.series_id
             WHERE v.id = ?
@@ -748,12 +763,24 @@ def run_reduce_and_merge(
             f"Diễn biến chính theo từng chương:\n"
             + "\n".join(chapter_events_for_ai)
         )
+        reduce_system = _REDUCE_SYSTEM_PROMPT
+        if str(vol_row["translation_mode"] or "") == "ln_vn":
+            from app.services.reference_service import load_active_reference_block
+
+            summary_ref_block, _ = load_active_reference_block(
+                phase="summary", db_path=db_path
+            )
+            if summary_ref_block:
+                reduce_system = f"{reduce_system}\n\n{summary_ref_block}"
+
         resp = active_pool.generate_content(
             reduce_prompt,
-            system_instruction=_REDUCE_SYSTEM_PROMPT,
+            system_instruction=reduce_system,
             temperature=0.3,
             response_mime_type="application/json",
             response_schema=VolumeReduceSchema,
+            task_type="continuity_reduce",
+            models=[model_override] if model_override and model_override.strip() else None,
         )
         ai_used_slot = resp.slot_id
         raw_reduce = _parse_json_object(resp.text)
@@ -972,25 +999,11 @@ def render_continuity_xml(
         )
 
     # 5. GLOSSARY (strictly approved terms present in this volume)
+    from app.services.glossary_service import build_glossary_term_xml_attrs
+
     glossary_el = ET.SubElement(root, "GLOSSARY")
     for g in glossary_rows:
-        if source_lang == "ja":
-            attrs = {
-                "jp": str(g["source_term"]),
-                "vn": str(g["vi_term"]),
-                "romaji": str(g["reading"] or ""),
-                "type": str(g["term_type"] or "Concept"),
-            }
-        else:
-            attrs = {
-                "source": str(g["source_term"]),
-                "vn": str(g["vi_term"]),
-                "reading": str(g["reading"] or ""),
-                "type": str(g["term_type"] or "Concept"),
-            }
-            if (g["han_viet"] or "").strip():
-                attrs["han_viet"] = str(g["han_viet"])
-        ET.SubElement(glossary_el, "TERM", attrs)
+        ET.SubElement(glossary_el, "TERM", build_glossary_term_xml_attrs(source_lang, g))
 
     # 6. RTAS_ANALYTICS
     rtas_el = ET.SubElement(root, "RTAS_ANALYTICS")

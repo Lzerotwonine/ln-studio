@@ -1,4 +1,4 @@
-"""CRUD, extraction, Gemini batch translation, and TSV/CSV/XML I/O routes for Master Glossary."""
+"""CRUD, extraction, Gemini batch translation, bulk operations, and TSV/CSV/XML I/O routes for Master Glossary."""
 
 from __future__ import annotations
 
@@ -12,24 +12,33 @@ from app.core.gemini_pool import NoAvailableSlotsError
 from app.models.schemas import (
     GlossaryBulkDeleteRequest,
     GlossaryBulkStatusRequest,
+    GlossaryBulkTypeRequest,
+    GlossaryDuplicateMode,
     GlossaryExtractRequest,
     GlossaryExtractResponse,
     GlossaryImportResponse,
     GlossaryListResponse,
+    GlossarySortBy,
     GlossaryStatus,
     GlossaryTermCreate,
     GlossaryTermResponse,
     GlossaryTermUpdate,
     GlossaryTranslateRequest,
     GlossaryTranslateResponse,
+    GlossaryTranslateSelectedRequest,
+    SortDir,
 )
 from app.services.glossary_service import (
+    bulk_delete_glossary_terms_service,
+    bulk_update_glossary_status_service,
+    bulk_update_glossary_type_service,
     export_glossary_tabular,
     extract_volume_glossary,
     import_glossary_tabular,
     list_glossary_terms,
     render_glossary_xml,
     translate_new_glossary_terms,
+    translate_selected_glossary_terms,
 )
 from app.services.languages import normalize_term_key
 
@@ -69,6 +78,7 @@ def translate_new_terms(
             volume_id=req.volume_id,
             batch_size=req.batch_size,
             max_rounds=req.max_rounds,
+            model_override=req.model_override,
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -79,15 +89,51 @@ def translate_new_terms(
     return GlossaryTranslateResponse(**res)
 
 
+@router.post(
+    "/series/{series_id}/glossary/translate-selected",
+    response_model=GlossaryTranslateResponse,
+)
+def translate_selected_terms(
+    series_id: int,
+    payload: GlossaryTranslateSelectedRequest,
+) -> GlossaryTranslateResponse:
+    try:
+        res = translate_selected_glossary_terms(
+            series_id=series_id,
+            term_ids=payload.term_ids,
+            apply_to_filter=payload.apply_to_filter,
+            filter_criteria=payload.filter.model_dump() if payload.filter else None,
+            exclude_ids=payload.exclude_ids,
+            batch_size=payload.batch_size,
+            max_rounds=payload.max_rounds,
+            model_override=payload.model_override,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except NoAvailableSlotsError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Lỗi khi gọi Gemini dịch lại thuật ngữ: {exc}")
+    return GlossaryTranslateResponse(**res)
+
+
 @router.get("/series/{series_id}/glossary", response_model=GlossaryListResponse)
 def get_series_glossary(
     series_id: int,
     volume_id: int | None = Query(default=None),
     status_filter: GlossaryStatus | None = Query(default=None, alias="status"),
     term_type: str | None = Query(default=None),
-    min_freq: int = Query(default=1, ge=1),
+    min_freq: int | None = Query(default=None, ge=1),
+    max_freq: int | None = Query(default=None, ge=1),
+    missing_vi: bool = Query(default=False),
+    missing_han_viet: bool = Query(default=False),
+    first_seen_vol: int | None = Query(default=None, ge=0),
     search: str | None = Query(default=None),
-    limit: int = Query(default=1000, ge=1, le=5000),
+    sort_by: GlossarySortBy = Query(default="freq"),
+    sort_dir: SortDir = Query(default="desc"),
+    limit: int = Query(default=100, ge=0, le=100000),
     offset: int = Query(default=0, ge=0),
 ) -> GlossaryListResponse:
     try:
@@ -97,7 +143,13 @@ def get_series_glossary(
             status_filter=status_filter,
             term_type=term_type,
             min_freq=min_freq,
+            max_freq=max_freq,
+            missing_vi=missing_vi,
+            missing_han_viet=missing_han_viet,
+            first_seen_vol=first_seen_vol,
             search=search,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
             limit=limit,
             offset=offset,
         )
@@ -205,28 +257,55 @@ def delete_glossary_term(term_id: int) -> None:
 
 @router.post("/glossary/bulk-status", response_model=dict[str, int])
 def bulk_update_glossary_status(payload: GlossaryBulkStatusRequest) -> dict[str, int]:
-    if not payload.term_ids:
-        return {"updated": 0}
-    placeholders = ",".join("?" for _ in payload.term_ids)
-    with db_session() as conn:
-        cur = conn.execute(
-            f"UPDATE glossary_terms SET status = ? WHERE id IN ({placeholders})",
-            [payload.status, *payload.term_ids],
+    try:
+        updated = bulk_update_glossary_status_service(
+            payload.status,
+            series_id=payload.series_id,
+            term_ids=payload.term_ids,
+            apply_to_filter=payload.apply_to_filter,
+            filter_criteria=payload.filter.model_dump() if payload.filter else None,
+            exclude_ids=payload.exclude_ids,
         )
-    return {"updated": cur.rowcount}
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"updated": updated}
+
+
+@router.post("/glossary/bulk-type", response_model=dict[str, int])
+def bulk_update_glossary_type(payload: GlossaryBulkTypeRequest) -> dict[str, int]:
+    try:
+        updated = bulk_update_glossary_type_service(
+            payload.term_type,
+            series_id=payload.series_id,
+            term_ids=payload.term_ids,
+            apply_to_filter=payload.apply_to_filter,
+            filter_criteria=payload.filter.model_dump() if payload.filter else None,
+            exclude_ids=payload.exclude_ids,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"updated": updated}
 
 
 @router.post("/glossary/bulk-delete", response_model=dict[str, int])
 def bulk_delete_glossary_terms(payload: GlossaryBulkDeleteRequest) -> dict[str, int]:
-    if not payload.term_ids:
-        return {"deleted": 0}
-    placeholders = ",".join("?" for _ in payload.term_ids)
-    with db_session() as conn:
-        cur = conn.execute(
-            f"DELETE FROM glossary_terms WHERE id IN ({placeholders})",
-            payload.term_ids,
+    try:
+        deleted = bulk_delete_glossary_terms_service(
+            series_id=payload.series_id,
+            term_ids=payload.term_ids,
+            apply_to_filter=payload.apply_to_filter,
+            filter_criteria=payload.filter.model_dump() if payload.filter else None,
+            exclude_ids=payload.exclude_ids,
         )
-    return {"deleted": cur.rowcount}
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"deleted": deleted}
 
 
 @router.post(
@@ -237,13 +316,22 @@ async def import_glossary_file(
     series_id: int,
     file: UploadFile = File(...),
     default_status: GlossaryStatus = Form(default="approved"),
+    duplicate_mode: GlossaryDuplicateMode = Form(default="upsert"),
+    default_first_seen_vol: int = Form(default=0),
+    force_default_status: bool = Form(default=True),
 ) -> GlossaryImportResponse:
     if not file.filename:
         raise HTTPException(status_code=400, detail="Thiếu tên tệp TSV/CSV.")
     raw = await file.read()
     try:
         res = import_glossary_tabular(
-            series_id, file.filename, raw, default_status=default_status
+            series_id,
+            file.filename,
+            raw,
+            default_status=default_status,
+            duplicate_mode=duplicate_mode,
+            default_first_seen_vol=default_first_seen_vol,
+            force_default_status=force_default_status,
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -258,6 +346,13 @@ def export_glossary_file(
     fmt: Literal["tsv", "csv"] = Query(default="tsv", alias="format"),
     volume_id: int | None = Query(default=None),
     status_filter: GlossaryStatus | None = Query(default=None, alias="status"),
+    term_type: str | None = Query(default=None),
+    min_freq: int | None = Query(default=None, ge=1),
+    max_freq: int | None = Query(default=None, ge=1),
+    missing_vi: bool = Query(default=False),
+    missing_han_viet: bool = Query(default=False),
+    first_seen_vol: int | None = Query(default=None, ge=0),
+    search: str | None = Query(default=None),
 ) -> Response:
     try:
         content, media_type = export_glossary_tabular(
@@ -265,6 +360,13 @@ def export_glossary_file(
             fmt=fmt,
             volume_id=volume_id,
             status_filter=status_filter,
+            term_type=term_type,
+            min_freq=min_freq,
+            max_freq=max_freq,
+            missing_vi=missing_vi,
+            missing_han_viet=missing_han_viet,
+            first_seen_vol=first_seen_vol,
+            search=search,
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

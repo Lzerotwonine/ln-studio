@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, status
 
 from app.core.database import db_session
+from app.services.epub_service import cleanup_volume_media
 from app.models.schemas import (
     HybridConfig,
     SeriesCreate,
@@ -172,9 +173,12 @@ def update_series(series_id: int, payload: SeriesUpdate) -> SeriesResponse:
 @router.delete("/series/{series_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_series(series_id: int) -> None:
     with db_session() as conn:
+        vol_rows = conn.execute("SELECT id FROM volumes WHERE series_id = ?", (series_id,)).fetchall()
         cur = conn.execute("DELETE FROM series WHERE id = ?", (series_id,))
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="Không tìm thấy bộ truyện.")
+    for vr in vol_rows:
+        cleanup_volume_media(int(vr["id"]))
 
 
 # ---------- Volumes ----------
@@ -293,3 +297,4 @@ def delete_volume(volume_id: int) -> None:
         cur = conn.execute("DELETE FROM volumes WHERE id = ?", (volume_id,))
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="Không tìm thấy tập truyện.")
+    cleanup_volume_media(volume_id)

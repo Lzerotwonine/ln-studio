@@ -2,6 +2,7 @@ import {
   BookMarked,
   BookOpen,
   CheckCheck,
+  HelpCircle,
   Languages,
   Moon,
   Settings,
@@ -31,6 +32,7 @@ const NAV_ITEMS: Array<{
   { id: 'translate', label: 'Dịch thuật', icon: Languages },
   { id: 'proofread', label: 'Hiệu đính', icon: CheckCheck },
   { id: 'settings', label: 'Cài đặt', icon: Settings },
+  { id: 'guide', label: 'Hướng dẫn tổng quan', icon: HelpCircle },
 ]
 
 export function Sidebar({

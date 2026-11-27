@@ -341,6 +341,7 @@ export async function translateNewGlossaryTerms(
     volume_id?: number | null
     batch_size?: number
     max_rounds?: number
+    model_override?: string | null
   },
 ): Promise<GlossaryTranslateResponse> {
   const { data } = await http.post<GlossaryTranslateResponse>(
@@ -349,6 +350,7 @@ export async function translateNewGlossaryTerms(
       volume_id: options?.volume_id ?? null,
       batch_size: options?.batch_size ?? 400,
       max_rounds: options?.max_rounds ?? 3,
+      model_override: options?.model_override || null,
     },
   )
   return data
@@ -360,18 +362,37 @@ export async function fetchGlossary(
     volume_id?: number | null
     status?: GlossaryStatus | null
     term_type?: string | null
-    min_freq?: number
+    min_freq?: number | null
+    max_freq?: number | null
+    missing_vi?: boolean
+    missing_han_viet?: boolean
+    first_seen_vol?: number | null
     search?: string
+    sort_by?: import('../types').GlossarySortBy
+    sort_dir?: import('../types').SortDir
     limit?: number
+    offset?: number
   },
 ): Promise<GlossaryListResponse> {
-  const query: Record<string, string | number> = {}
+  const query: Record<string, string | number | boolean> = {}
   if (params?.volume_id) query.volume_id = params.volume_id
   if (params?.status) query.status = params.status
   if (params?.term_type) query.term_type = params.term_type
   if (params?.min_freq && params.min_freq > 1) query.min_freq = params.min_freq
+  if (params?.max_freq && params.max_freq >= 1) query.max_freq = params.max_freq
+  if (params?.missing_vi) query.missing_vi = true
+  if (params?.missing_han_viet) query.missing_han_viet = true
+  if (
+    params?.first_seen_vol !== undefined &&
+    params?.first_seen_vol !== null
+  ) {
+    query.first_seen_vol = params.first_seen_vol
+  }
   if (params?.search?.trim()) query.search = params.search.trim()
-  if (params?.limit) query.limit = params.limit
+  if (params?.sort_by) query.sort_by = params.sort_by
+  if (params?.sort_dir) query.sort_dir = params.sort_dir
+  if (params?.limit !== undefined) query.limit = params.limit
+  if (params?.offset && params.offset > 0) query.offset = params.offset
 
   const { data } = await http.get<GlossaryListResponse>(
     `/api/series/${seriesId}/glossary`,
@@ -390,6 +411,7 @@ export async function createGlossaryTerm(
     english_meaning?: string
     term_type?: string
     status?: GlossaryStatus
+    first_seen_vol?: number
   },
 ): Promise<GlossaryTerm> {
   const { data } = await http.post<GlossaryTerm>(
@@ -425,22 +447,60 @@ export async function deleteGlossaryTerm(termId: number): Promise<void> {
 }
 
 export async function bulkUpdateGlossaryStatus(
-  termIds: number[],
+  selection: import('../types').GlossaryBulkSelectionPayload,
   status: GlossaryStatus,
 ): Promise<{ updated: number }> {
   const { data } = await http.post<{ updated: number }>(
     '/api/glossary/bulk-status',
-    { term_ids: termIds, status },
+    { ...selection, status },
+  )
+  return data
+}
+
+export async function bulkUpdateGlossaryType(
+  selection: import('../types').GlossaryBulkSelectionPayload,
+  termType: string,
+): Promise<{ updated: number }> {
+  const { data } = await http.post<{ updated: number }>(
+    '/api/glossary/bulk-type',
+    { ...selection, term_type: termType },
   )
   return data
 }
 
 export async function bulkDeleteGlossaryTerms(
-  termIds: number[],
+  selection: import('../types').GlossaryBulkSelectionPayload,
 ): Promise<{ deleted: number }> {
   const { data } = await http.post<{ deleted: number }>(
     '/api/glossary/bulk-delete',
-    { term_ids: termIds },
+    selection,
+  )
+  return data
+}
+
+export async function translateSelectedGlossaryTerms(
+  seriesId: number,
+  payload: {
+    term_ids?: number[]
+    apply_to_filter?: boolean
+    filter?: import('../types').GlossaryFilterCriteria | null
+    exclude_ids?: number[]
+    batch_size?: number
+    max_rounds?: number
+    model_override?: string | null
+  },
+): Promise<GlossaryTranslateResponse> {
+  const { data } = await http.post<GlossaryTranslateResponse>(
+    `/api/series/${seriesId}/glossary/translate-selected`,
+    {
+      term_ids: payload.term_ids ?? [],
+      apply_to_filter: payload.apply_to_filter ?? false,
+      filter: payload.filter ?? null,
+      exclude_ids: payload.exclude_ids ?? [],
+      batch_size: payload.batch_size ?? 400,
+      max_rounds: payload.max_rounds ?? 3,
+      model_override: payload.model_override || null,
+    },
   )
   return data
 }
@@ -448,11 +508,25 @@ export async function bulkDeleteGlossaryTerms(
 export async function importGlossaryFile(
   seriesId: number,
   file: File,
-  defaultStatus: GlossaryStatus = 'approved',
+  options?: {
+    default_status?: GlossaryStatus
+    duplicate_mode?: import('../types').GlossaryDuplicateMode
+    default_first_seen_vol?: number
+    force_default_status?: boolean
+  },
 ): Promise<GlossaryImportResponse> {
   const form = new FormData()
   form.append('file', file)
-  form.append('default_status', defaultStatus)
+  form.append('default_status', options?.default_status ?? 'approved')
+  form.append('duplicate_mode', options?.duplicate_mode ?? 'upsert')
+  form.append(
+    'default_first_seen_vol',
+    String(options?.default_first_seen_vol ?? 0),
+  )
+  form.append(
+    'force_default_status',
+    String(options?.force_default_status ?? true),
+  )
   const { data } = await http.post<GlossaryImportResponse>(
     `/api/series/${seriesId}/glossary/import`,
     form,
@@ -464,12 +538,27 @@ export async function importGlossaryFile(
 export function getGlossaryExportUrl(
   seriesId: number,
   fmt: 'tsv' | 'csv',
-  volumeId?: number | null,
-  status?: GlossaryStatus | null,
+  filter?: import('../types').GlossaryFilterCriteria | null,
 ): string {
   const sp = new URLSearchParams({ format: fmt })
-  if (volumeId) sp.set('volume_id', String(volumeId))
-  if (status) sp.set('status', status)
+  if (filter?.volume_id) sp.set('volume_id', String(filter.volume_id))
+  if (filter?.status) sp.set('status', filter.status)
+  if (filter?.term_type) sp.set('term_type', filter.term_type)
+  if (filter?.min_freq && filter.min_freq > 1) {
+    sp.set('min_freq', String(filter.min_freq))
+  }
+  if (filter?.max_freq && filter.max_freq >= 1) {
+    sp.set('max_freq', String(filter.max_freq))
+  }
+  if (filter?.missing_vi) sp.set('missing_vi', 'true')
+  if (filter?.missing_han_viet) sp.set('missing_han_viet', 'true')
+  if (
+    filter?.first_seen_vol !== undefined &&
+    filter?.first_seen_vol !== null
+  ) {
+    sp.set('first_seen_vol', String(filter.first_seen_vol))
+  }
+  if (filter?.search?.trim()) sp.set('search', filter.search.trim())
   return `${baseURL}/api/series/${seriesId}/glossary/export?${sp.toString()}`
 }
 
@@ -487,10 +576,11 @@ export async function fetchContinuityStatus(
 export async function runMapPhaseApi(
   volumeId: number,
   forceRerun = false,
+  modelOverride?: string | null,
 ): Promise<MapPhaseResponse> {
   const { data } = await http.post<MapPhaseResponse>(
     `/api/volumes/${volumeId}/continuity/map`,
-    { force_rerun: forceRerun },
+    { force_rerun: forceRerun, model_override: modelOverride || null },
   )
   return data
 }
@@ -498,10 +588,11 @@ export async function runMapPhaseApi(
 export async function runReducePhaseApi(
   volumeId: number,
   skipAiSummary = false,
+  modelOverride?: string | null,
 ): Promise<ReducePhaseResponse> {
   const { data } = await http.post<ReducePhaseResponse>(
     `/api/volumes/${volumeId}/continuity/reduce`,
-    { skip_ai_summary: skipAiSummary },
+    { skip_ai_summary: skipAiSummary, model_override: modelOverride || null },
   )
   return data
 }
@@ -668,6 +759,9 @@ export async function startTranslationJob(
     mode?: TranslationMode
     temperature?: number
     hybrid_config?: HybridConfig
+    pre_mask?: boolean
+    mature_mode?: boolean
+    model_override?: string | null
     only_uncompleted?: boolean
     only_failed_or_blocked?: boolean
   },
@@ -716,6 +810,9 @@ export async function retranslateSingleChapter(
     mode?: TranslationMode
     temperature?: number
     hybrid_config?: HybridConfig
+    pre_mask?: boolean
+    mature_mode?: boolean
+    model_override?: string | null
   },
 ): Promise<{
   chapter_id: number
@@ -840,6 +937,7 @@ export async function retranslateChapterSelection(
     source_side: 'raw' | 'translated'
     instruction?: string
     temperature?: number
+    model_override?: string | null
   },
 ): Promise<RetranslateSelectionResponse> {
   const { data } = await http.post<RetranslateSelectionResponse>(
@@ -859,4 +957,165 @@ export function getVolumeDocxExportUrl(
 
 export function getVolumeEpubExportUrl(volumeId: number): string {
   return `${baseURL}/api/volumes/${volumeId}/export/epub`
+}
+
+// ---------- Batch C: Task Models, Sensitive Masks Manager & Reference Packs ----------
+
+export async function fetchTaskModels(): Promise<
+  import('../types').TaskModelsResponse
+> {
+  const { data } = await http.get<import('../types').TaskModelsResponse>(
+    '/api/settings/task-models',
+  )
+  return data
+}
+
+export async function updateTaskModels(
+  tasks: Record<string, import('../types').TaskModelAssignment>,
+): Promise<import('../types').TaskModelsResponse> {
+  const { data } = await http.put<import('../types').TaskModelsResponse>(
+    '/api/settings/task-models',
+    { tasks },
+  )
+  return data
+}
+
+export async function fetchAllSensitiveMasks(params?: {
+  series_id?: number | null
+  include_global?: boolean
+  only_global?: boolean
+  source_lang?: import('../types').MaskSourceLang | null
+  search?: string
+}): Promise<SensitiveMaskItem[]> {
+  const query: Record<string, string | number | boolean> = {}
+  if (params?.series_id) query.series_id = params.series_id
+  if (params?.include_global !== undefined) {
+    query.include_global = params.include_global
+  }
+  if (params?.only_global) query.only_global = true
+  if (params?.source_lang && params.source_lang !== 'all') {
+    query.source_lang = params.source_lang
+  }
+  if (params?.search?.trim()) query.search = params.search.trim()
+  const { data } = await http.get<SensitiveMaskItem[]>('/api/masks', {
+    params: query,
+  })
+  return data
+}
+
+export async function createSensitiveMask(payload: {
+  series_id: number | null
+  source_lang: import('../types').MaskSourceLang
+  raw_phrase: string
+  safe_replacement: string
+}): Promise<SensitiveMaskItem> {
+  const { data } = await http.post<SensitiveMaskItem>('/api/masks', payload)
+  return data
+}
+
+export async function updateSensitiveMask(
+  maskId: number,
+  payload: {
+    source_lang?: import('../types').MaskSourceLang
+    raw_phrase?: string
+    safe_replacement?: string
+  },
+): Promise<SensitiveMaskItem> {
+  const { data } = await http.patch<SensitiveMaskItem>(
+    `/api/masks/${maskId}`,
+    payload,
+  )
+  return data
+}
+
+export async function bulkImportSensitiveMasks(payload: {
+  text: string
+  series_id: number | null
+  source_lang: import('../types').MaskSourceLang
+}): Promise<import('../types').SensitiveMaskBulkImportResponse> {
+  const { data } = await http.post<
+    import('../types').SensitiveMaskBulkImportResponse
+  >('/api/masks/bulk-import', payload)
+  return data
+}
+
+export async function seedDefaultSensitiveMasks(): Promise<
+  import('../types').SensitiveMaskBulkImportResponse
+> {
+  const { data } = await http.post<
+    import('../types').SensitiveMaskBulkImportResponse
+  >('/api/masks/seed-default')
+  return data
+}
+
+export async function fetchReferenceFiles(): Promise<
+  import('../types').ReferenceFileItem[]
+> {
+  const { data } = await http.get<import('../types').ReferenceFileItem[]>(
+    '/api/references',
+  )
+  return data
+}
+
+export async function fetchReferenceFileDetail(
+  refId: number,
+): Promise<import('../types').ReferenceFileDetail> {
+  const { data } = await http.get<import('../types').ReferenceFileDetail>(
+    `/api/references/${refId}`,
+  )
+  return data
+}
+
+export async function uploadReferenceFile(
+  file: File,
+  options?: {
+    pack_name?: string
+    use_in_summary?: boolean
+    use_in_translate?: boolean
+    is_active?: boolean
+  },
+): Promise<import('../types').ReferenceFileItem> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('pack_name', options?.pack_name || 'LN-VN Core')
+  form.append('use_in_summary', String(options?.use_in_summary ?? false))
+  form.append('use_in_translate', String(options?.use_in_translate ?? true))
+  form.append('is_active', String(options?.is_active ?? true))
+  const { data } = await http.post<import('../types').ReferenceFileItem>(
+    '/api/references/upload',
+    form,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  )
+  return data
+}
+
+export async function updateReferenceFile(
+  refId: number,
+  payload: {
+    pack_name?: string
+    use_in_summary?: boolean
+    use_in_translate?: boolean
+    is_active?: boolean
+    content?: string
+  },
+): Promise<import('../types').ReferenceFileItem> {
+  const { data } = await http.patch<import('../types').ReferenceFileItem>(
+    `/api/references/${refId}`,
+    payload,
+  )
+  return data
+}
+
+export async function deleteReferenceFile(refId: number): Promise<void> {
+  await http.delete(`/api/references/${refId}`)
+}
+
+export async function syncReferenceFilesDisk(): Promise<{
+  inserted: number
+  total: number
+}> {
+  const { data } = await http.post<{ inserted: number; total: number }>(
+    '/api/references/sync-disk',
+  )
+  return data
 }

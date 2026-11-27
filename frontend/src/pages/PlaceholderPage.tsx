@@ -4,7 +4,7 @@ import type { NavSection, Series, Volume } from '../types'
 interface PlaceholderPageProps {
   section: Exclude<
     NavSection,
-    'dashboard' | 'glossary' | 'characters' | 'translate' | 'settings'
+    'dashboard' | 'glossary' | 'characters' | 'translate' | 'settings' | 'guide'
   >
   selectedSeries: Series | null
   selectedVolume: Volume | null
@@ -14,7 +14,7 @@ interface PlaceholderPageProps {
 const SECTION_DETAILS: Record<
   Exclude<
     NavSection,
-    'dashboard' | 'glossary' | 'characters' | 'translate' | 'settings'
+    'dashboard' | 'glossary' | 'characters' | 'translate' | 'settings' | 'guide'
   >,
   { title: string; phase: string; description: string; highlights: string[] }
 > = {

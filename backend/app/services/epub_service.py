@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
+import os
+import posixpath
 import re
+import shutil
 import sqlite3
 import tempfile
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 import ebooklib
 from bs4 import BeautifulSoup, NavigableString, Tag, XMLParsedAsHTMLWarning
@@ -18,9 +22,72 @@ from ebooklib import epub
 
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
-from app.core.database import db_session
+from app.core.database import PROJECT_ROOT, db_session
 
 SplitMode = Literal["epub_chapters", "chunk_chars"]
+
+_SAFE_MEDIA_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def get_media_root() -> Path:
+    env_dir = os.environ.get("LN_STUDIO_MEDIA_DIR")
+    if env_dir:
+        return Path(env_dir)
+    return PROJECT_ROOT / "data" / "media"
+
+
+def get_volume_media_dir(volume_id: int) -> Path:
+    return get_media_root() / f"vol_{volume_id}"
+
+
+def cleanup_volume_media(volume_id: int) -> None:
+    media_dir = get_volume_media_dir(volume_id)
+    if media_dir.is_dir():
+        shutil.rmtree(media_dir, ignore_errors=True)
+
+
+def list_volume_media(volume_id: int) -> list[dict[str, Any]]:
+    media_dir = get_volume_media_dir(volume_id)
+    if not media_dir.is_dir():
+        return []
+    items: list[dict[str, Any]] = []
+    for f in sorted(media_dir.iterdir()):
+        if f.is_file():
+            items.append(
+                {
+                    "filename": f.name,
+                    "url": f"/api/media/vol_{volume_id}/{f.name}",
+                    "size_bytes": f.stat().st_size,
+                }
+            )
+    return items
+
+
+def detect_image_ext(data: bytes) -> str | None:
+    """Validate image bytes via magic headers without requiring Pillow."""
+    if not data or len(data) < 8:
+        return None
+    if data.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if data.startswith((b"GIF87a", b"GIF89a")):
+        return ".gif"
+    if data[:4] == b"RIFF" and len(data) >= 12 and data[8:12] == b"WEBP":
+        return ".webp"
+    if data.startswith(b"BM"):
+        return ".bmp"
+    return None
+
+
+def _sanitize_media_filename(raw_name: str, fallback_ext: str, content_bytes: bytes) -> str:
+    base = Path(raw_name).name
+    stem = _SAFE_MEDIA_NAME_RE.sub("_", Path(base).stem).strip("._") or "img"
+    ext = Path(base).suffix.lower()
+    if ext not in {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}:
+        ext = fallback_ext
+    short_hash = hashlib.sha256(content_bytes).hexdigest()[:8]
+    return f"{stem[:40]}_{short_hash}{ext}"
 
 BLOCK_TAGS = {
     "p",
@@ -199,8 +266,21 @@ def normalize_ruby_in_soup(soup: BeautifulSoup, keep_furigana: bool = True) -> N
                 extra.extract()
 
 
-def html_to_clean_text(html_bytes: bytes | str, keep_furigana: bool = True) -> tuple[str, str]:
-    """Convert an EPUB XHTML/HTML document to (title, clean_text) preserving all block boundaries."""
+def _extract_img_href(tag: Tag) -> str:
+    for attr in ("src", "href", "xlink:href", "{http://www.w3.org/1999/xlink}href"):
+        val = tag.get(attr)
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    return ""
+
+
+def html_to_clean_text(
+    html_bytes: bytes | str,
+    keep_furigana: bool = True,
+    *,
+    image_resolver: Callable[[str], str | None] | None = None,
+) -> tuple[str, str]:
+    """Convert an EPUB XHTML/HTML document to (title, clean_text) preserving block boundaries and illustrations."""
     try:
         soup = BeautifulSoup(html_bytes, "lxml")
     except Exception:
@@ -211,6 +291,22 @@ def html_to_clean_text(html_bytes: bytes | str, keep_furigana: bool = True) -> t
         doc_title = soup.title.string.strip()
 
     body = soup.body if soup.body is not None else soup
+
+    # Replace illustration tags (<img>, <image>, <svg:image>) with Markdown image markers BEFORE stripping <svg>
+    if image_resolver is not None:
+        for img_tag in list(body.find_all(["img", "image", "svg:image"])):
+            href = _extract_img_href(img_tag)
+            if not href:
+                continue
+            md_line = image_resolver(href)
+            if not md_line:
+                continue
+            parent_svg = img_tag.find_parent("svg")
+            marker = NavigableString(f"\n{md_line}\n")
+            if parent_svg is not None and not parent_svg.get_text(strip=True):
+                parent_svg.replace_with(marker)
+            else:
+                img_tag.replace_with(marker)
 
     # Remove non-content elements
     for junk in body.find_all(["script", "style", "svg", "noscript"]):
@@ -315,8 +411,9 @@ def parse_epub_bytes(
     file_bytes: bytes,
     *,
     keep_furigana: bool = True,
+    volume_id: int | None = None,
 ) -> list[tuple[str, str]]:
-    """Read an EPUB strictly in spine order and return list of (title, clean_text) sections."""
+    """Read an EPUB strictly in spine order, extracting illustrations when volume_id is provided."""
     # ebooklib.epub.read_epub requires a filesystem path
     with tempfile.NamedTemporaryFile(suffix=".epub", delete=False) as tmp:
         tmp.write(file_bytes)
@@ -327,6 +424,26 @@ def parse_epub_bytes(
     finally:
         tmp_path.unlink(missing_ok=True)
 
+    # Index all image resources inside the EPUB for fast lookup
+    epub_images_by_path: dict[str, tuple[str, bytes]] = {}
+    epub_images_by_name: dict[str, tuple[str, bytes]] = {}
+    for res in book.get_items():
+        if res.get_type() == ebooklib.ITEM_IMAGE or (res.media_type or "").startswith("image/"):
+            res_name = (res.get_name() or "").replace("\\", "/").lstrip("./")
+            data = res.get_content() or b""
+            ext = detect_image_ext(data)
+            if not ext:
+                continue
+            norm_p = posixpath.normpath(res_name)
+            epub_images_by_path[norm_p.lower()] = (res_name, data)
+            epub_images_by_name[Path(norm_p).name.lower()] = (res_name, data)
+
+    media_dir: Path | None = None
+    saved_cache: dict[str, str] = {}
+    if volume_id is not None and epub_images_by_path:
+        media_dir = get_volume_media_dir(volume_id)
+        media_dir.mkdir(parents=True, exist_ok=True)
+
     toc_titles = _build_toc_title_map(book)
     sections: list[tuple[str, str]] = []
 
@@ -336,12 +453,40 @@ def parse_epub_bytes(
         if item is None or item.get_type() != ebooklib.ITEM_DOCUMENT:
             continue
 
+        item_name = (item.get_name() or "").replace("\\", "/").lstrip("./")
+        doc_dir = posixpath.dirname(item_name)
+
+        def _resolve_image(href: str) -> str | None:
+            if volume_id is None or media_dir is None:
+                return None
+            clean_href = href.split("#")[0].split("?")[0].replace("\\", "/")
+            joined = posixpath.normpath(posixpath.join(doc_dir, clean_href)).lstrip("./")
+            found = epub_images_by_path.get(joined.lower()) or epub_images_by_name.get(
+                Path(clean_href).name.lower()
+            )
+            if found is None:
+                return None
+            orig_name, img_bytes = found
+            ext = detect_image_ext(img_bytes)
+            if not ext:
+                return None
+            digest = hashlib.sha256(img_bytes).hexdigest()
+            if digest not in saved_cache:
+                safe_fname = _sanitize_media_filename(orig_name, ext, img_bytes)
+                (media_dir / safe_fname).write_bytes(img_bytes)
+                saved_cache[digest] = safe_fname
+            fname = saved_cache[digest]
+            return f"![image:{fname}](/api/media/vol_{volume_id}/{fname})"
+
         raw_content = item.get_content()
-        html_title, clean_text = html_to_clean_text(raw_content, keep_furigana=keep_furigana)
+        html_title, clean_text = html_to_clean_text(
+            raw_content,
+            keep_furigana=keep_furigana,
+            image_resolver=_resolve_image if volume_id is not None else None,
+        )
         if not clean_text or len(clean_text.strip()) < 2:
             continue
 
-        item_name = (item.get_name() or "").lstrip("./")
         toc_title = toc_titles.get(item_name) or toc_titles.get(Path(item_name).name)
         title = toc_title or html_title or f"Chương {len(sections) + 1}"
         sections.append((title, clean_text))
@@ -537,11 +682,14 @@ def parse_uploaded_book(
     keep_furigana: bool = True,
     chunk_min: int = 4000,
     chunk_max: int = 5000,
+    volume_id: int | None = None,
 ) -> list[ParsedChapter]:
     """Parse an uploaded .epub, .txt, or .docx file into ParsedChapter records."""
     ext = Path(filename).suffix.lower()
     if ext == ".epub":
-        sections = parse_epub_bytes(file_bytes, keep_furigana=keep_furigana)
+        sections = parse_epub_bytes(
+            file_bytes, keep_furigana=keep_furigana, volume_id=volume_id
+        )
     elif ext == ".txt":
         sections = parse_txt_bytes(file_bytes)
     elif ext == ".docx":
@@ -579,6 +727,17 @@ def import_book_to_volume(
     db_path: Path | str | None = None,
 ) -> dict[str, Any]:
     """Parse uploaded book and save chapters to SQLite `chapters` table for the given volume."""
+    with db_session(db_path) as conn:
+        vol_row = conn.execute(
+            "SELECT id, series_id, volume_number, title FROM volumes WHERE id = ?",
+            (volume_id,),
+        ).fetchone()
+        if vol_row is None:
+            raise LookupError("Không tìm thấy tập truyện.")
+
+    if replace_existing and Path(filename).suffix.lower() == ".epub":
+        cleanup_volume_media(volume_id)
+
     chapters = parse_uploaded_book(
         filename,
         file_bytes,
@@ -586,6 +745,7 @@ def import_book_to_volume(
         keep_furigana=keep_furigana,
         chunk_min=chunk_min,
         chunk_max=chunk_max,
+        volume_id=volume_id,
     )
 
     with db_session(db_path) as conn:

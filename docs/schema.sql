@@ -114,6 +114,7 @@ CREATE TABLE IF NOT EXISTS relationships (
 CREATE TABLE IF NOT EXISTS sensitive_masks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     series_id INTEGER REFERENCES series(id) ON DELETE CASCADE, -- NULL = áp dụng toàn cục
+    source_lang TEXT NOT NULL DEFAULT 'all', -- all | ja | zh | ko
     raw_phrase TEXT NOT NULL,
     safe_replacement TEXT NOT NULL,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -146,4 +147,18 @@ CREATE TABLE IF NOT EXISTS prompt_presets (
     source_lang TEXT NOT NULL,              -- ja | zh | ko | any
     mode TEXT NOT NULL,                     -- ln_vn | freeform | hybrid
     content TEXT NOT NULL
+);
+
+-- 10. LN-VN Reference Packs (tài liệu tham chiếu nạp tự động theo pha)
+CREATE TABLE IF NOT EXISTS reference_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pack_name TEXT NOT NULL DEFAULT 'LN-VN Core',
+    filename TEXT NOT NULL,
+    content TEXT NOT NULL,
+    use_in_summary INTEGER NOT NULL DEFAULT 0,
+    use_in_translate INTEGER NOT NULL DEFAULT 1,
+    is_active INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(pack_name, filename)
 );

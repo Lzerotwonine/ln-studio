@@ -1,9 +1,15 @@
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   Ban,
   BookMarked,
   CheckCheck,
+  ChevronLeft,
+  ChevronRight,
   Download,
   FileSpreadsheet,
+  FilterX,
   MoreHorizontal,
   Plus,
   ScanSearch,
@@ -13,29 +19,41 @@ import {
   Upload,
   X,
 } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActionMenu } from '../components/ActionMenu'
+import { GlossaryImportModal } from '../components/GlossaryImportModal'
 import { ImportVolumeModal } from '../components/ImportVolumeModal'
+import { TaskModelSelector } from '../components/TaskModelSelector'
 import {
   bulkDeleteGlossaryTerms,
   bulkUpdateGlossaryStatus,
+  bulkUpdateGlossaryType,
   createGlossaryTerm,
   deleteGlossaryTerm,
   extractErrorMessage,
   extractVolumeGlossary,
   fetchGlossary,
   getGlossaryExportUrl,
-  importGlossaryFile,
   translateNewGlossaryTerms,
+  translateSelectedGlossaryTerms,
   updateGlossaryTerm,
 } from '../lib/api'
 import type {
+  GlossaryBulkSelectionPayload,
+  GlossaryFilterCriteria,
+  GlossarySortBy,
   GlossaryStatus,
   GlossaryTerm,
   Series,
+  SortDir,
   Volume,
 } from '../types'
-import { formatVolumeLabel, GLOSSARY_STATUS_META, TERM_TYPES } from '../types'
+import {
+  formatFirstSeenVol,
+  formatVolumeLabel,
+  GLOSSARY_STATUS_META,
+  TERM_TYPES,
+} from '../types'
 
 interface GlossaryTabProps {
   selectedSeries: Series | null
@@ -44,28 +62,47 @@ interface GlossaryTabProps {
 }
 
 type ScopeMode = 'volume' | 'series'
+type PageSizeOption = 100 | 500 | 1000 | 0
+
+const ROW_HEIGHT = 46
+const VIRTUAL_OVERSCAN = 14
+const VIRTUAL_THRESHOLD = 200
 
 export function GlossaryTab({
   selectedSeries,
   selectedVolume,
   onBackToDashboard,
 }: GlossaryTabProps) {
-  // Filters
+  // Scope & Filters
   const [scope, setScope] = useState<ScopeMode>(
     selectedVolume ? 'volume' : 'series',
   )
+  const hadVolumeOnceRef = useRef<boolean>(selectedVolume !== null)
   const [statusFilter, setStatusFilter] = useState<'all' | GlossaryStatus>(
     'all',
   )
   const [typeFilter, setTypeFilter] = useState<string>('all')
-  const [minFreq, setMinFreq] = useState<number>(1)
+  const [minFreq, setMinFreq] = useState<string>('')
+  const [maxFreq, setMaxFreq] = useState<string>('')
+  const [missingVi, setMissingVi] = useState<boolean>(false)
+  const [missingHanViet, setMissingHanViet] = useState<boolean>(false)
+  const [firstSeenVolFilter, setFirstSeenVolFilter] = useState<string>('all')
   const [searchInput, setSearchInput] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
 
+  // Sorting & Pagination
+  const [sortBy, setSortBy] = useState<GlossarySortBy>('freq')
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const [pageSize, setPageSize] = useState<PageSizeOption>(100)
+  const [page, setPage] = useState<number>(1)
+
   // Data
   const [terms, setTerms] = useState<GlossaryTerm[]>([])
-  const [totalFiltered, setTotalFiltered] = useState(0)
+  const [totalCount, setTotalCount] = useState(0)
   const [totalInScope, setTotalInScope] = useState(0)
+  const [distinctFirstSeenVols, setDistinctFirstSeenVols] = useState<number[]>(
+    [],
+  )
   const [statusCounts, setStatusCounts] = useState<
     Record<GlossaryStatus, number>
   >({
@@ -75,16 +112,28 @@ export function GlossaryTab({
     ignored: 0,
   })
   const [loading, setLoading] = useState(false)
+  const loadSeqRef = useRef(0)
 
-  // Selection & inline editing state
+  // Excel / Explorer Multi-select state
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [anchorIndex, setAnchorIndex] = useState<number | null>(null)
+  const [selectAllMatching, setSelectAllMatching] = useState<boolean>(false)
+  const [excludedIds, setExcludedIds] = useState<Set<number>>(new Set())
   const [savingTermId, setSavingTermId] = useState<number | null>(null)
 
-  // Operations
+  // Virtual scroll state (active when terms.length > VIRTUAL_THRESHOLD)
+  const tableContainerRef = useRef<HTMLDivElement | null>(null)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewportHeight, setViewportHeight] = useState(520)
+
+  // Operations & Modals
+  const [modelOverride, setModelOverride] = useState('')
   const [extracting, setExtracting] = useState(false)
   const [translating, setTranslating] = useState(false)
-  const [importingTsv, setImportingTsv] = useState(false)
-  const [importModalOpen, setImportModalOpen] = useState(false)
+  const [translatingSelected, setTranslatingSelected] = useState(false)
+  const [bulkBusy, setBulkBusy] = useState(false)
+  const [importBookModalOpen, setImportBookModalOpen] = useState(false)
+  const [importTsvModalOpen, setImportTsvModalOpen] = useState(false)
   const [addModalOpen, setAddModalOpen] = useState(false)
   const [newTermForm, setNewTermForm] = useState({
     source_term: '',
@@ -94,19 +143,36 @@ export function GlossaryTab({
     english_meaning: '',
     term_type: 'Concept',
     status: 'approved' as GlossaryStatus,
+    first_seen_vol: 0,
   })
 
   // Feedback
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [toastMsg, setToastMsg] = useState<string | null>(null)
-  const tsvInputRef = useRef<HTMLInputElement | null>(null)
 
   const notify = (msg: string) => {
     setToastMsg(msg)
     window.setTimeout(() => {
       setToastMsg((curr) => (curr === msg ? null : curr))
-    }, 4500)
+    }, 5000)
   }
+
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set())
+    setAnchorIndex(null)
+    setSelectAllMatching(false)
+    setExcludedIds(new Set())
+  }, [])
+
+  // Auto-select volume scope once selectedVolume hydrates after initial mount
+  useEffect(() => {
+    if (selectedVolume && !hadVolumeOnceRef.current) {
+      hadVolumeOnceRef.current = true
+      setScope('volume')
+    } else if (!selectedVolume && scope === 'volume') {
+      setScope('series')
+    }
+  }, [selectedVolume, scope])
 
   // Debounce instant search
   useEffect(() => {
@@ -116,54 +182,316 @@ export function GlossaryTab({
     return () => window.clearTimeout(timer)
   }, [searchInput])
 
+  // Reset to page 1 & clear selection whenever filters/scope/series/volume/sort change
+  const seriesId = selectedSeries?.id ?? null
+  const volumeId = selectedVolume?.id ?? null
+  const effectiveVolumeId = scope === 'volume' && volumeId ? volumeId : null
+
+  const parsedMinFreq = minFreq.trim() ? Math.max(1, Number(minFreq) || 1) : null
+  const parsedMaxFreq = maxFreq.trim() ? Math.max(1, Number(maxFreq) || 1) : null
+  const parsedFirstSeenVol =
+    firstSeenVolFilter !== 'all' ? Number(firstSeenVolFilter) : null
+
+  const activeFilterCriteria = useMemo<GlossaryFilterCriteria>(
+    () => ({
+      volume_id: effectiveVolumeId,
+      status: statusFilter === 'all' ? null : statusFilter,
+      term_type: typeFilter === 'all' ? null : typeFilter,
+      min_freq: parsedMinFreq,
+      max_freq: parsedMaxFreq,
+      missing_vi: missingVi,
+      missing_han_viet: missingHanViet,
+      first_seen_vol: parsedFirstSeenVol,
+      search: debouncedSearch.trim() || null,
+    }),
+    [
+      effectiveVolumeId,
+      statusFilter,
+      typeFilter,
+      parsedMinFreq,
+      parsedMaxFreq,
+      missingVi,
+      missingHanViet,
+      parsedFirstSeenVol,
+      debouncedSearch,
+    ],
+  )
+
+  useEffect(() => {
+    setPage(1)
+    clearSelection()
+    if (tableContainerRef.current) {
+      tableContainerRef.current.scrollTop = 0
+      setScrollTop(0)
+    }
+  }, [
+    seriesId,
+    effectiveVolumeId,
+    statusFilter,
+    typeFilter,
+    parsedMinFreq,
+    parsedMaxFreq,
+    missingVi,
+    missingHanViet,
+    parsedFirstSeenVol,
+    debouncedSearch,
+    sortBy,
+    sortDir,
+    pageSize,
+    clearSelection,
+  ])
+
   const loadGlossary = useCallback(async () => {
-    if (!selectedSeries) {
+    const seq = ++loadSeqRef.current
+    if (!seriesId) {
       setTerms([])
+      setTotalCount(0)
+      setTotalInScope(0)
+      setDistinctFirstSeenVols([])
       return
     }
     setLoading(true)
     setErrorMsg(null)
     try {
-      const effectiveVolId =
-        scope === 'volume' && selectedVolume ? selectedVolume.id : null
-      const res = await fetchGlossary(selectedSeries.id, {
-        volume_id: effectiveVolId,
+      const offset = pageSize > 0 ? (page - 1) * pageSize : 0
+      const res = await fetchGlossary(seriesId, {
+        volume_id: effectiveVolumeId,
         status: statusFilter === 'all' ? null : statusFilter,
         term_type: typeFilter === 'all' ? null : typeFilter,
-        min_freq: minFreq,
+        min_freq: parsedMinFreq,
+        max_freq: parsedMaxFreq,
+        missing_vi: missingVi,
+        missing_han_viet: missingHanViet,
+        first_seen_vol: parsedFirstSeenVol,
         search: debouncedSearch,
-        limit: 1000,
+        sort_by: sortBy,
+        sort_dir: sortDir,
+        limit: pageSize,
+        offset,
       })
+      if (seq !== loadSeqRef.current) return
       setTerms(res.items)
-      setTotalFiltered(res.total_filtered)
+      setTotalCount(res.total_count ?? res.total_filtered)
       setTotalInScope(res.total_in_scope)
       setStatusCounts(res.status_counts)
-      setSelectedIds((prev) => {
-        const currentIds = new Set(res.items.map((i) => i.id))
-        const next = new Set<number>()
-        prev.forEach((id) => {
-          if (currentIds.has(id)) next.add(id)
-        })
-        return next
-      })
+      setDistinctFirstSeenVols(res.distinct_first_seen_vols ?? [])
     } catch (err) {
+      if (seq !== loadSeqRef.current) return
       setErrorMsg(extractErrorMessage(err))
     } finally {
-      setLoading(false)
+      if (seq === loadSeqRef.current) {
+        setLoading(false)
+      }
     }
   }, [
-    selectedSeries,
-    selectedVolume,
-    scope,
+    seriesId,
+    effectiveVolumeId,
     statusFilter,
     typeFilter,
-    minFreq,
+    parsedMinFreq,
+    parsedMaxFreq,
+    missingVi,
+    missingHanViet,
+    parsedFirstSeenVol,
     debouncedSearch,
+    sortBy,
+    sortDir,
+    pageSize,
+    page,
   ])
 
   useEffect(() => {
     void loadGlossary()
   }, [loadGlossary])
+
+  // Track viewport height of scroll container for Virtual List
+  useEffect(() => {
+    const el = tableContainerRef.current
+    if (!el) return
+    const updateHeight = () => {
+      if (el.clientHeight > 0) setViewportHeight(el.clientHeight)
+    }
+    updateHeight()
+    const ro = new ResizeObserver(updateHeight)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [terms.length])
+
+  // ---------- Selection Logic (Excel / Windows Explorer style) ----------
+
+  const isRowSelected = useCallback(
+    (termId: number): boolean => {
+      if (selectAllMatching) return !excludedIds.has(termId)
+      return selectedIds.has(termId)
+    },
+    [selectAllMatching, excludedIds, selectedIds],
+  )
+
+  const effectiveSelectedCount = selectAllMatching
+    ? Math.max(0, totalCount - excludedIds.size)
+    : selectedIds.size
+
+  const allOnPageSelected =
+    terms.length > 0 && terms.every((t) => isRowSelected(t.id))
+
+  const buildBulkSelectionPayload = (): GlossaryBulkSelectionPayload => {
+    if (selectAllMatching) {
+      return {
+        series_id: seriesId,
+        apply_to_filter: true,
+        filter: activeFilterCriteria,
+        exclude_ids: Array.from(excludedIds),
+      }
+    }
+    return {
+      series_id: seriesId,
+      term_ids: Array.from(selectedIds),
+      apply_to_filter: false,
+    }
+  }
+
+  const applyRangeSelect = (
+    idx: number,
+    additive: boolean,
+  ) => {
+    const startAnchor = anchorIndex ?? idx
+    const lo = Math.min(startAnchor, idx)
+    const hi = Math.max(startAnchor, idx)
+    const rangeIds = terms.slice(lo, hi + 1).map((t) => t.id)
+
+    if (selectAllMatching) {
+      if (additive) {
+        setExcludedIds((prev) => {
+          const next = new Set(prev)
+          rangeIds.forEach((id) => next.delete(id))
+          return next
+        })
+      } else {
+        setSelectAllMatching(false)
+        setExcludedIds(new Set())
+        setSelectedIds(new Set(rangeIds))
+      }
+      return
+    }
+
+    if (additive) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        rangeIds.forEach((id) => next.add(id))
+        return next
+      })
+    } else {
+      setSelectedIds(new Set(rangeIds))
+    }
+  }
+
+  const toggleSingleId = (id: number, idx: number) => {
+    setAnchorIndex(idx)
+    if (selectAllMatching) {
+      setExcludedIds((prev) => {
+        const next = new Set(prev)
+        if (next.has(id)) next.delete(id)
+        else next.add(id)
+        return next
+      })
+      return
+    }
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const handleRowClick = (
+    e: React.MouseEvent<HTMLTableRowElement>,
+    idx: number,
+    termId: number,
+  ) => {
+    const target = e.target as HTMLElement
+    // Do not hijack clicks inside inline inputs, selects, buttons, or checkboxes
+    if (target.closest('input, select, button, a, label')) return
+
+    const isCtrl = e.ctrlKey || e.metaKey
+    const isShift = e.shiftKey
+
+    if (isShift && isCtrl) {
+      // Ctrl + Shift + Click: keep old regions + add new contiguous range
+      window.getSelection()?.removeAllRanges()
+      applyRangeSelect(idx, true)
+    } else if (isShift) {
+      // Shift + Click: select contiguous range from anchor
+      window.getSelection()?.removeAllRanges()
+      applyRangeSelect(idx, false)
+    } else if (isCtrl) {
+      // Ctrl + Click: toggle single row
+      toggleSingleId(termId, idx)
+    } else {
+      // Plain Click: select single row + set anchor
+      setSelectAllMatching(false)
+      setExcludedIds(new Set())
+      setSelectedIds(new Set([termId]))
+      setAnchorIndex(idx)
+    }
+  }
+
+  const handleCheckboxClick = (
+    e: React.MouseEvent<HTMLInputElement>,
+    idx: number,
+    termId: number,
+  ) => {
+    e.stopPropagation()
+    const isCtrl = e.ctrlKey || e.metaKey
+    const isShift = e.shiftKey
+
+    if (isShift && isCtrl) {
+      applyRangeSelect(idx, true)
+    } else if (isShift) {
+      applyRangeSelect(idx, false)
+    } else {
+      toggleSingleId(termId, idx)
+    }
+  }
+
+  const handleToggleSelectPage = () => {
+    if (allOnPageSelected) {
+      clearSelection()
+    } else {
+      setSelectAllMatching(false)
+      setExcludedIds(new Set())
+      setSelectedIds(new Set(terms.map((t) => t.id)))
+      setAnchorIndex(0)
+    }
+  }
+
+  const handleSelectAllMatchingFilter = () => {
+    setSelectAllMatching(true)
+    setExcludedIds(new Set())
+    setSelectedIds(new Set(terms.map((t) => t.id)))
+  }
+
+  // ---------- Sorting ----------
+
+  const handleSortClick = (col: GlossarySortBy) => {
+    if (sortBy === col) {
+      setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortBy(col)
+      setSortDir(col === 'freq' ? 'desc' : 'asc')
+    }
+  }
+
+  const renderSortIcon = (col: GlossarySortBy) => {
+    if (sortBy !== col) {
+      return <ArrowUpDown className="w-3 h-3 text-slate-400/70 shrink-0" />
+    }
+    return sortDir === 'asc' ? (
+      <ArrowUp className="w-3 h-3 text-indigo-600 dark:text-indigo-400 shrink-0" />
+    ) : (
+      <ArrowDown className="w-3 h-3 text-indigo-600 dark:text-indigo-400 shrink-0" />
+    )
+  }
 
   // ---------- Actions ----------
 
@@ -177,7 +505,7 @@ export function GlossaryTab({
     try {
       const res = await extractVolumeGlossary(selectedVolume.id, 1)
       notify(
-        `Đã đếm xong ${res.total_extracted} thuật ngữ cho Tập ${selectedVolume.volume_number}: +${res.new_terms} từ mới, ${res.existing_terms} từ đã có trong Master DB.`,
+        `Đã đếm xong ${res.total_extracted} thuật ngữ cho ${formatVolumeLabel(selectedVolume)}: +${res.new_terms} từ mới, ${res.existing_terms} từ đã có trong Master DB.`,
       )
       setScope('volume')
       await loadGlossary()
@@ -193,12 +521,11 @@ export function GlossaryTab({
     setTranslating(true)
     setErrorMsg(null)
     try {
-      const effectiveVolId =
-        scope === 'volume' && selectedVolume ? selectedVolume.id : null
       const res = await translateNewGlossaryTerms(selectedSeries.id, {
-        volume_id: effectiveVolId,
+        volume_id: effectiveVolumeId,
         batch_size: 400,
         max_rounds: 3,
+        model_override: modelOverride || null,
       })
       if (res.total_new_found === 0) {
         notify('Không có từ nào ở trạng thái "Chưa dịch" trong phạm vi hiện tại.')
@@ -215,22 +542,30 @@ export function GlossaryTab({
     }
   }
 
-  const handleImportTsv = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file || !selectedSeries) return
-    setImportingTsv(true)
+  const handleTranslateSelected = async () => {
+    if (!selectedSeries || effectiveSelectedCount === 0) return
+    setTranslatingSelected(true)
     setErrorMsg(null)
     try {
-      const res = await importGlossaryFile(selectedSeries.id, file, 'approved')
+      const sel = buildBulkSelectionPayload()
+      const res = await translateSelectedGlossaryTerms(selectedSeries.id, {
+        term_ids: sel.term_ids,
+        apply_to_filter: sel.apply_to_filter,
+        filter: sel.filter,
+        exclude_ids: sel.exclude_ids,
+        batch_size: 400,
+        max_rounds: 3,
+        model_override: modelOverride || null,
+      })
       notify(
-        `Đã nhập TSV/CSV: +${res.imported} từ mới, cập nhật ${res.updated} từ${res.skipped > 0 ? `, bỏ qua ${res.skipped} dòng` : ''}.`,
+        `Đã dịch lại bằng AI ${res.translated_count}/${res.total_new_found} thuật ngữ đã chọn qua ${res.rounds_used} vòng${res.missing_count > 0 ? ` (còn thiếu ${res.missing_count} từ)` : ''}.`,
       )
+      clearSelection()
       await loadGlossary()
     } catch (err) {
       setErrorMsg(extractErrorMessage(err))
     } finally {
-      setImportingTsv(false)
+      setTranslatingSelected(false)
     }
   }
 
@@ -255,7 +590,6 @@ export function GlossaryTab({
 
     setSavingTermId(term.id)
     setErrorMsg(null)
-    // Optimistic update
     setTerms((prev) =>
       prev.map((item) => (item.id === term.id ? { ...item, ...patch } : item)),
     )
@@ -284,35 +618,66 @@ export function GlossaryTab({
   }
 
   const handleBulkStatus = async (nextStatus: GlossaryStatus) => {
-    const ids = Array.from(selectedIds)
-    if (ids.length === 0) return
+    if (effectiveSelectedCount === 0) return
+    setBulkBusy(true)
     setErrorMsg(null)
     try {
-      const res = await bulkUpdateGlossaryStatus(ids, nextStatus)
-      notify(
-        `Đã chuyển ${res.updated} thuật ngữ sang "${GLOSSARY_STATUS_META[nextStatus].label}".`,
+      const res = await bulkUpdateGlossaryStatus(
+        buildBulkSelectionPayload(),
+        nextStatus,
       )
-      setSelectedIds(new Set())
+      notify(
+        `Đã chuyển ${res.updated.toLocaleString('vi-VN')} thuật ngữ sang "${GLOSSARY_STATUS_META[nextStatus].label}".`,
+      )
+      clearSelection()
       await loadGlossary()
     } catch (err) {
       setErrorMsg(extractErrorMessage(err))
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+
+  const handleBulkType = async (nextType: string) => {
+    if (!nextType || effectiveSelectedCount === 0) return
+    setBulkBusy(true)
+    setErrorMsg(null)
+    try {
+      const res = await bulkUpdateGlossaryType(
+        buildBulkSelectionPayload(),
+        nextType,
+      )
+      notify(
+        `Đã đổi loại ${res.updated.toLocaleString('vi-VN')} thuật ngữ sang "${nextType}".`,
+      )
+      clearSelection()
+      await loadGlossary()
+    } catch (err) {
+      setErrorMsg(extractErrorMessage(err))
+    } finally {
+      setBulkBusy(false)
     }
   }
 
   const handleBulkDelete = async () => {
-    const ids = Array.from(selectedIds)
-    if (ids.length === 0) return
-    if (!window.confirm(`Xóa vĩnh viễn ${ids.length} thuật ngữ đã chọn?`)) {
+    if (effectiveSelectedCount === 0) return
+    const scopeHint = selectAllMatching
+      ? `TẤT CẢ ${effectiveSelectedCount.toLocaleString('vi-VN')} thuật ngữ khớp bộ lọc hiện tại`
+      : `${effectiveSelectedCount.toLocaleString('vi-VN')} thuật ngữ đã chọn`
+    if (!window.confirm(`Xóa vĩnh viễn ${scopeHint}?`)) {
       return
     }
+    setBulkBusy(true)
     setErrorMsg(null)
     try {
-      const res = await bulkDeleteGlossaryTerms(ids)
-      notify(`Đã xóa ${res.deleted} thuật ngữ.`)
-      setSelectedIds(new Set())
+      const res = await bulkDeleteGlossaryTerms(buildBulkSelectionPayload())
+      notify(`Đã xóa ${res.deleted.toLocaleString('vi-VN')} thuật ngữ.`)
+      clearSelection()
       await loadGlossary()
     } catch (err) {
       setErrorMsg(extractErrorMessage(err))
+    } finally {
+      setBulkBusy(false)
     }
   }
 
@@ -349,6 +714,7 @@ export function GlossaryTab({
         english_meaning: '',
         term_type: 'Concept',
         status: 'approved',
+        first_seen_vol: selectedVolume ? selectedVolume.volume_number : 0,
       })
       notify('Đã thêm thuật ngữ mới vào Master Glossary.')
       await loadGlossary()
@@ -357,21 +723,26 @@ export function GlossaryTab({
     }
   }
 
-  const toggleSelectAll = () => {
-    if (selectedIds.size === terms.length && terms.length > 0) {
-      setSelectedIds(new Set())
-    } else {
-      setSelectedIds(new Set(terms.map((t) => t.id)))
-    }
-  }
+  const hasAdvancedFilters =
+    statusFilter !== 'all' ||
+    typeFilter !== 'all' ||
+    minFreq.trim() !== '' ||
+    maxFreq.trim() !== '' ||
+    missingVi ||
+    missingHanViet ||
+    firstSeenVolFilter !== 'all' ||
+    searchInput.trim() !== ''
 
-  const toggleRow = (id: number) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+  const resetAllFilters = () => {
+    setStatusFilter('all')
+    setTypeFilter('all')
+    setMinFreq('')
+    setMaxFreq('')
+    setMissingVi(false)
+    setMissingHanViet(false)
+    setFirstSeenVolFilter('all')
+    setSearchInput('')
+    setDebouncedSearch('')
   }
 
   if (!selectedSeries) {
@@ -398,27 +769,68 @@ export function GlossaryTab({
     )
   }
 
-  const allSelected = terms.length > 0 && selectedIds.size === terms.length
-  const effectiveExportVol =
-    scope === 'volume' && selectedVolume ? selectedVolume.id : null
-  const effectiveExportStatus = statusFilter === 'all' ? null : statusFilter
+  // Pagination & Virtual List window calculations
+  const totalPages =
+    pageSize > 0 ? Math.max(1, Math.ceil(totalCount / pageSize)) : 1
+  const showingFrom =
+    totalCount === 0 ? 0 : pageSize > 0 ? (page - 1) * pageSize + 1 : 1
+  const showingTo =
+    totalCount === 0
+      ? 0
+      : pageSize > 0
+        ? Math.min(totalCount, (page - 1) * pageSize + terms.length)
+        : terms.length
+
+  const isVirtualized = terms.length > VIRTUAL_THRESHOLD
+  const startIdx = isVirtualized
+    ? Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - VIRTUAL_OVERSCAN)
+    : 0
+  const endIdx = isVirtualized
+    ? Math.min(
+        terms.length,
+        Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + VIRTUAL_OVERSCAN,
+      )
+    : terms.length
+  const visibleSlice = terms.slice(startIdx, endIdx)
+  const topSpacerHeight = isVirtualized ? startIdx * ROW_HEIGHT : 0
+  const bottomSpacerHeight = isVirtualized
+    ? Math.max(0, (terms.length - endIdx) * ROW_HEIGHT)
+    : 0
 
   return (
-    <div className="max-w-[1600px] mx-auto p-5 space-y-4">
+    <div className="max-w-[1640px] mx-auto p-5 pb-20 space-y-4">
       {/* Header + 2 Primary Actions + Compact Dropdown */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-zinc-100">
-            Master Glossary
-          </h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-zinc-100">
+              Master Glossary
+            </h2>
+            <span
+              className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
+                effectiveVolumeId
+                  ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300'
+                  : 'bg-slate-200/80 text-slate-700 dark:bg-zinc-800 dark:text-zinc-300'
+              }`}
+            >
+              {effectiveVolumeId && selectedVolume
+                ? `Riêng ${formatVolumeLabel(selectedVolume)}`
+                : 'Toàn Series'}
+            </span>
+          </div>
           <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
-            Quản lý thuật ngữ chuẩn hóa xuyên suốt bộ truyện và lọc theo từng
-            tập.
+            Hỗ trợ chọn đa dạng kiểu Excel (Click, Shift+Click, Ctrl+Click,
+            Ctrl+Shift+Click) và đồng bộ 2 bước từ Excel lịch sử.
           </p>
         </div>
 
-        {/* 2 Primary Actions + Secondary Dropdown */}
+        {/* 2 Primary Actions + Quick Model Override + Secondary Dropdown */}
         <div className="flex flex-wrap items-center gap-2">
+          <TaskModelSelector
+            taskKey="glossary_translate"
+            value={modelOverride}
+            onChange={setModelOverride}
+          />
           <button
             type="button"
             disabled={!selectedVolume || extracting}
@@ -438,59 +850,57 @@ export function GlossaryTab({
             <Sparkles className="w-3.5 h-3.5" />
             {translating
               ? 'Đang dịch bằng Gemini...'
-              : `Dịch từ mới (${statusCounts.new})`}
+              : `Dịch từ mới (${statusCounts.new.toLocaleString('vi-VN')})`}
           </button>
 
           <ActionMenu
-            label={importingTsv ? 'Đang nhập...' : 'Nhập / Xuất'}
+            label="Nhập / Xuất"
             icon={<MoreHorizontal className="w-3.5 h-3.5" />}
             items={[
               {
                 label: 'Thêm thuật ngữ thủ công',
                 icon: <Plus className="w-3.5 h-3.5 text-indigo-500" />,
-                onClick: () => setAddModalOpen(true),
+                onClick: () => {
+                  setNewTermForm((prev) => ({
+                    ...prev,
+                    first_seen_vol: selectedVolume
+                      ? selectedVolume.volume_number
+                      : 0,
+                  }))
+                  setAddModalOpen(true)
+                },
               },
               {
                 label: 'Nhập tệp truyện (.epub/.txt/.docx)',
                 icon: <Upload className="w-3.5 h-3.5 text-indigo-500" />,
                 disabled: !selectedVolume,
-                onClick: () => setImportModalOpen(true),
+                onClick: () => setImportBookModalOpen(true),
               },
               {
-                label: 'Import TSV / CSV từ Excel',
+                label: 'Import TSV / CSV từ Excel (2 bước)',
                 icon: <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />,
-                disabled: importingTsv,
                 dividerBefore: true,
-                onClick: () => tsvInputRef.current?.click(),
+                onClick: () => setImportTsvModalOpen(true),
               },
               {
-                label: 'Export TSV (Excel)',
+                label: 'Export TSV (Excel — toàn bộ bộ lọc)',
                 icon: <Download className="w-3.5 h-3.5" />,
                 href: getGlossaryExportUrl(
                   selectedSeries.id,
                   'tsv',
-                  effectiveExportVol,
-                  effectiveExportStatus,
+                  activeFilterCriteria,
                 ),
               },
               {
-                label: 'Export CSV',
+                label: 'Export CSV (toàn bộ bộ lọc)',
                 icon: <Download className="w-3.5 h-3.5" />,
                 href: getGlossaryExportUrl(
                   selectedSeries.id,
                   'csv',
-                  effectiveExportVol,
-                  effectiveExportStatus,
+                  activeFilterCriteria,
                 ),
               },
             ]}
-          />
-          <input
-            ref={tsvInputRef}
-            type="file"
-            accept=".tsv,.csv,.txt"
-            className="hidden"
-            onChange={(e) => void handleImportTsv(e)}
           />
         </div>
       </div>
@@ -531,7 +941,7 @@ export function GlossaryTab({
               }`}
             >
               {selectedVolume
-                ? formatVolumeLabel(selectedVolume)
+                ? `Chỉ ${formatVolumeLabel(selectedVolume)}`
                 : 'Theo tập'}
             </button>
             <button
@@ -558,7 +968,7 @@ export function GlossaryTab({
                   : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-700'
               }`}
             >
-              Tất cả ({totalInScope})
+              Tất cả ({totalInScope.toLocaleString('vi-VN')})
             </button>
             {(['new', 'translated', 'approved', 'ignored'] as GlossaryStatus[]).map(
               (st) => (
@@ -572,15 +982,16 @@ export function GlossaryTab({
                       : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 hover:bg-slate-200 dark:hover:bg-zinc-700'
                   }`}
                 >
-                  {GLOSSARY_STATUS_META[st].label} ({statusCounts[st] ?? 0})
+                  {GLOSSARY_STATUS_META[st].label} (
+                  {(statusCounts[st] ?? 0).toLocaleString('vi-VN')})
                 </button>
               ),
             )}
           </div>
         </div>
 
-        {/* Search + Type + Min Freq */}
-        <div className="flex flex-wrap items-center gap-2.5">
+        {/* Search + Advanced Filters Row */}
+        <div className="flex flex-wrap items-center gap-2">
           <div className="relative flex-1 min-w-[220px]">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
@@ -588,7 +999,7 @@ export function GlossaryTab({
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Tìm tức thì theo từ gốc, nghĩa Việt, phiên âm, Hán-Việt, tiếng Anh..."
-              className="w-full pl-9 pr-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+              className="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
             />
           </div>
 
@@ -596,9 +1007,9 @@ export function GlossaryTab({
             aria-label="Lọc theo loại thuật ngữ"
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
-            className="px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950"
+            className="px-2.5 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950"
           >
-            <option value="all">Mọi loại (term_type)</option>
+            <option value="all">Mọi loại</option>
             {TERM_TYPES.map((t) => (
               <option key={t} value={t}>
                 {t}
@@ -606,116 +1017,213 @@ export function GlossaryTab({
             ))}
           </select>
 
-          <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950 text-xs text-slate-600 dark:text-zinc-300">
-            <span>Tần suất ≥</span>
+          <select
+            aria-label="Lọc theo tập đầu xuất hiện"
+            value={firstSeenVolFilter}
+            onChange={(e) => setFirstSeenVolFilter(e.target.value)}
+            className="px-2.5 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950"
+          >
+            <option value="all">Mọi tập đầu</option>
+            {distinctFirstSeenVols.map((vNum) => (
+              <option key={vNum} value={String(vNum)}>
+                {vNum <= 0 ? 'Gốc (0)' : `Tập ${vNum}`}
+              </option>
+            ))}
+          </select>
+
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950 text-xs text-slate-600 dark:text-zinc-300">
+            <span>Tần suất</span>
             <input
               type="number"
               min={1}
-              max={9999}
+              aria-label="Tần suất tối thiểu"
+              placeholder="Từ"
               value={minFreq}
-              onChange={(e) =>
-                setMinFreq(Math.max(1, Number(e.target.value) || 1))
-              }
-              className="w-14 px-1.5 py-0.5 text-sm rounded bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 text-center"
+              onChange={(e) => setMinFreq(e.target.value)}
+              className="w-12 px-1.5 py-0.5 text-xs rounded bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 text-center"
             />
-          </label>
-
-          <div className="text-xs text-slate-500 dark:text-zinc-400 ml-auto">
-            Hiển thị <strong>{terms.length}</strong> / {totalFiltered} kết quả
+            <span>–</span>
+            <input
+              type="number"
+              min={1}
+              aria-label="Tần suất tối đa"
+              placeholder="Đến"
+              value={maxFreq}
+              onChange={(e) => setMaxFreq(e.target.value)}
+              className="w-12 px-1.5 py-0.5 text-xs rounded bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 text-center"
+            />
           </div>
+
+          <button
+            type="button"
+            onClick={() => setMissingVi((prev) => !prev)}
+            className={`px-2.5 py-1.5 rounded-xl text-xs font-medium border transition-colors cursor-pointer ${
+              missingVi
+                ? 'border-amber-500 bg-amber-50 dark:bg-amber-500/15 text-amber-800 dark:text-amber-300'
+                : 'border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800'
+            }`}
+          >
+            Chưa dịch Việt
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setMissingHanViet((prev) => !prev)}
+            className={`px-2.5 py-1.5 rounded-xl text-xs font-medium border transition-colors cursor-pointer ${
+              missingHanViet
+                ? 'border-amber-500 bg-amber-50 dark:bg-amber-500/15 text-amber-800 dark:text-amber-300'
+                : 'border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800'
+            }`}
+          >
+            Chưa có Hán-Việt
+          </button>
+
+          {hasAdvancedFilters && (
+            <button
+              type="button"
+              onClick={resetAllFilters}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 cursor-pointer"
+            >
+              <FilterX className="w-3.5 h-3.5" />
+              Xóa lọc
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Bulk Action Bar */}
-      {selectedIds.size > 0 && (
-        <div className="sticky top-2 z-20 flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 rounded-xl bg-indigo-600 text-white shadow-md text-xs font-medium">
-          <span>Đã chọn {selectedIds.size} thuật ngữ</span>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => void handleBulkStatus('approved')}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white font-semibold cursor-pointer"
-            >
-              <CheckCheck className="w-3.5 h-3.5" />
-              Duyệt hàng loạt
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleBulkStatus('ignored')}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-900/80 text-white font-semibold cursor-pointer"
-            >
-              <Ban className="w-3.5 h-3.5" />
-              Bỏ qua hàng loạt
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleBulkStatus('new')}
-              className="px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 cursor-pointer"
-            >
-              Đặt Chưa dịch
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleBulkDelete()}
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-rose-500 hover:bg-rose-600 text-white cursor-pointer"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              Xóa
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedIds(new Set())}
-              className="px-2 py-1.5 rounded-lg hover:bg-white/15 cursor-pointer"
-            >
-              Bỏ chọn
-            </button>
-          </div>
+      {/* Gmail/Excel-style Select All Matching Banner */}
+      {allOnPageSelected && totalCount > terms.length && (
+        <div className="flex flex-wrap items-center justify-center gap-2 px-4 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-500/15 border border-indigo-200 dark:border-indigo-500/30 text-xs text-indigo-900 dark:text-indigo-200">
+          {selectAllMatching ? (
+            <>
+              <span>
+                Đang chọn{' '}
+                <strong>
+                  tất cả {effectiveSelectedCount.toLocaleString('vi-VN')} từ
+                </strong>{' '}
+                khớp bộ lọc hiện tại.
+              </span>
+              <button
+                type="button"
+                onClick={clearSelection}
+                className="font-semibold underline hover:text-indigo-600 cursor-pointer"
+              >
+                Bỏ chọn tất cả
+              </button>
+            </>
+          ) : (
+            <>
+              <span>
+                Đã chọn <strong>{terms.length.toLocaleString('vi-VN')}</strong>{' '}
+                từ trên trang này.
+              </span>
+              <button
+                type="button"
+                onClick={handleSelectAllMatchingFilter}
+                className="font-bold text-indigo-700 dark:text-indigo-300 underline hover:text-indigo-900 cursor-pointer"
+              >
+                Chọn tất cả {totalCount.toLocaleString('vi-VN')} từ khớp bộ lọc
+                hiện tại
+              </button>
+            </>
+          )}
         </div>
       )}
 
-      {/* Spreadsheet Table */}
+      {/* Spreadsheet Table (with Virtual List when >200 rows) */}
       <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden shadow-xs">
-        <div className="overflow-x-auto max-h-[65vh] overflow-y-auto">
+        <div
+          ref={tableContainerRef}
+          onScroll={(e) => {
+            if (isVirtualized) {
+              setScrollTop(e.currentTarget.scrollTop)
+            }
+          }}
+          className="overflow-x-auto max-h-[62vh] overflow-y-auto"
+        >
           <table className="w-full text-left border-collapse text-xs">
-            <thead className="sticky top-0 z-10 bg-slate-100 dark:bg-zinc-950 text-slate-600 dark:text-zinc-400 uppercase text-[11px] border-b border-slate-200 dark:border-zinc-800">
+            <thead className="sticky top-0 z-10 bg-slate-100 dark:bg-zinc-950 text-slate-600 dark:text-zinc-400 uppercase text-[11px] border-b border-slate-200 dark:border-zinc-800 select-none">
               <tr>
                 <th className="w-9 px-3 py-2.5 text-center">
                   <input
                     type="checkbox"
-                    aria-label="Chọn tất cả"
-                    checked={allSelected}
-                    onChange={toggleSelectAll}
+                    aria-label="Chọn tất cả trang này"
+                    checked={allOnPageSelected}
+                    onChange={handleToggleSelectPage}
                     className="rounded border-slate-300 text-indigo-600 cursor-pointer"
                   />
                 </th>
-                <th className="px-3 py-2.5 font-semibold min-w-[150px]">
-                  Từ gốc
+                <th className="px-3 py-2.5 font-semibold min-w-[155px]">
+                  <button
+                    type="button"
+                    onClick={() => handleSortClick('source_term')}
+                    className="inline-flex items-center gap-1 hover:text-slate-900 dark:hover:text-zinc-100 cursor-pointer uppercase"
+                  >
+                    Từ gốc {renderSortIcon('source_term')}
+                  </button>
                 </th>
-                <th className="px-2.5 py-2.5 font-semibold text-center w-20">
-                  Tần suất
+                <th className="px-2 py-2.5 font-semibold text-center w-20">
+                  <button
+                    type="button"
+                    onClick={() => handleSortClick('first_seen_vol')}
+                    className="inline-flex items-center gap-1 hover:text-slate-900 dark:hover:text-zinc-100 cursor-pointer uppercase"
+                  >
+                    Tập đầu {renderSortIcon('first_seen_vol')}
+                  </button>
                 </th>
-                <th className="px-2.5 py-2.5 font-semibold min-w-[180px]">
-                  Bản dịch Việt
+                <th className="px-2 py-2.5 font-semibold text-center w-20">
+                  <button
+                    type="button"
+                    onClick={() => handleSortClick('freq')}
+                    className="inline-flex items-center gap-1 hover:text-slate-900 dark:hover:text-zinc-100 cursor-pointer uppercase"
+                  >
+                    Tần suất {renderSortIcon('freq')}
+                  </button>
                 </th>
-                <th className="px-2.5 py-2.5 font-semibold min-w-[140px]">
+                <th className="px-2.5 py-2.5 font-semibold min-w-[175px]">
+                  <button
+                    type="button"
+                    onClick={() => handleSortClick('vi_term')}
+                    className="inline-flex items-center gap-1 hover:text-slate-900 dark:hover:text-zinc-100 cursor-pointer uppercase"
+                  >
+                    Bản dịch Việt {renderSortIcon('vi_term')}
+                  </button>
+                </th>
+                <th className="px-2.5 py-2.5 font-semibold min-w-[130px]">
                   Phiên âm
                 </th>
-                <th className="px-2.5 py-2.5 font-semibold min-w-[120px]">
+                <th className="px-2.5 py-2.5 font-semibold min-w-[115px]">
                   Hán-Việt
                 </th>
-                <th className="px-2.5 py-2.5 font-semibold min-w-[150px]">
+                <th className="px-2.5 py-2.5 font-semibold min-w-[135px]">
                   Nghĩa Anh
                 </th>
-                <th className="px-2.5 py-2.5 font-semibold w-32">Loại</th>
-                <th className="px-2.5 py-2.5 font-semibold w-32">Trạng thái</th>
-                <th className="w-10 px-2 py-2.5 text-center" />
+                <th className="px-2.5 py-2.5 font-semibold w-32">
+                  <button
+                    type="button"
+                    onClick={() => handleSortClick('term_type')}
+                    className="inline-flex items-center gap-1 hover:text-slate-900 dark:hover:text-zinc-100 cursor-pointer uppercase"
+                  >
+                    Loại {renderSortIcon('term_type')}
+                  </button>
+                </th>
+                <th className="px-2.5 py-2.5 font-semibold w-32">
+                  <button
+                    type="button"
+                    onClick={() => handleSortClick('status')}
+                    className="inline-flex items-center gap-1 hover:text-slate-900 dark:hover:text-zinc-100 cursor-pointer uppercase"
+                  >
+                    Trạng thái {renderSortIcon('status')}
+                  </button>
+                </th>
+                <th className="w-9 px-2 py-2.5 text-center" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-zinc-800/80">
               {loading ? (
                 <tr>
                   <td
-                    colSpan={10}
+                    colSpan={11}
                     className="p-10 text-center text-sm text-slate-400"
                   >
                     Đang tải bảng thuật ngữ...
@@ -724,177 +1232,398 @@ export function GlossaryTab({
               ) : terms.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={10}
-                    className="p-12 text-center text-sm text-slate-500 dark:text-zinc-400 space-y-2"
+                    colSpan={11}
+                    className="p-12 text-center text-sm text-slate-500 dark:text-zinc-400"
                   >
-                    <div>
-                      Chưa có thuật ngữ nào khớp bộ lọc. Hãy bấm{' '}
-                      <strong>Nhập truyện</strong> rồi{' '}
-                      <strong>Đếm từ cho Tập này</strong> hoặc{' '}
-                      <strong>Import TSV/CSV</strong>.
-                    </div>
+                    {effectiveVolumeId
+                      ? 'Không có thuật ngữ nào xuất hiện trong tập này khớp bộ lọc. Hãy bấm "Đếm từ cho Tập này" hoặc chuyển sang "Toàn Series".'
+                      : 'Chưa có thuật ngữ nào khớp bộ lọc. Hãy bấm "Đếm từ cho Tập này" hoặc "Import TSV / CSV từ Excel".'}
                   </td>
                 </tr>
               ) : (
-                terms.map((term) => {
-                  const checked = selectedIds.has(term.id)
-                  const freqValue =
-                    scope === 'volume' && term.volume_freq !== null
-                      ? term.volume_freq
-                      : term.total_freq
-                  return (
-                    <tr
-                      key={term.id}
-                      className={`group transition-colors ${
-                        checked
-                          ? 'bg-indigo-50/60 dark:bg-indigo-500/10'
-                          : 'hover:bg-slate-50/80 dark:hover:bg-zinc-800/40'
-                      } ${savingTermId === term.id ? 'opacity-70' : ''}`}
-                    >
-                      <td className="px-3 py-1.5 text-center">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleRow(term.id)}
-                          className="rounded border-slate-300 text-indigo-600 cursor-pointer"
-                        />
-                      </td>
-
-                      <td className="px-3 py-1.5">
-                        <div className="font-semibold text-sm text-slate-900 dark:text-zinc-100">
-                          {term.source_term}
-                        </div>
-                        <div className="text-[10px] text-slate-400">
-                          Vol {term.first_seen_vol}
-                        </div>
-                      </td>
-
-                      <td className="px-2.5 py-1.5 text-center font-mono font-semibold text-slate-700 dark:text-zinc-300">
-                        {freqValue}
-                      </td>
-
-                      <td className="px-1.5 py-1">
-                        <InlineCellInput
-                          value={term.vi_term}
-                          placeholder="Nhập nghĩa Việt..."
-                          onCommit={(v) =>
-                            void handleInlinePatch(term, { vi_term: v })
-                          }
-                        />
-                      </td>
-
-                      <td className="px-1.5 py-1">
-                        <InlineCellInput
-                          value={term.reading}
-                          placeholder="Romaji/Pinyin..."
-                          onCommit={(v) =>
-                            void handleInlinePatch(term, { reading: v })
-                          }
-                        />
-                      </td>
-
-                      <td className="px-1.5 py-1">
-                        <InlineCellInput
-                          value={term.han_viet}
-                          placeholder="Hán-Việt..."
-                          onCommit={(v) =>
-                            void handleInlinePatch(term, { han_viet: v })
-                          }
-                        />
-                      </td>
-
-                      <td className="px-1.5 py-1">
-                        <InlineCellInput
-                          value={term.english_meaning}
-                          placeholder="English..."
-                          onCommit={(v) =>
-                            void handleInlinePatch(term, {
-                              english_meaning: v,
-                            })
-                          }
-                        />
-                      </td>
-
-                      <td className="px-1.5 py-1">
-                        <select
-                          value={term.term_type}
-                          onChange={(e) =>
-                            void handleInlinePatch(term, {
-                              term_type: e.target.value,
-                            })
-                          }
-                          className="w-full px-2 py-1 rounded-md border border-transparent hover:border-slate-200 dark:hover:border-zinc-700 focus:border-indigo-500 bg-transparent focus:bg-white dark:focus:bg-zinc-950 text-xs focus:outline-none"
-                        >
-                          {TERM_TYPES.map((t) => (
-                            <option
-                              key={t}
-                              value={t}
-                              className="bg-white dark:bg-zinc-900"
-                            >
-                              {t}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-
-                      <td className="px-1.5 py-1">
-                        <select
-                          value={term.status}
-                          onChange={(e) =>
-                            void handleInlinePatch(term, {
-                              status: e.target.value as GlossaryStatus,
-                            })
-                          }
-                          className={`w-full px-2 py-1 rounded-full text-[11px] font-medium border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/40 ${GLOSSARY_STATUS_META[term.status].badgeClass}`}
-                        >
-                          {(
-                            [
-                              'new',
-                              'translated',
-                              'approved',
-                              'ignored',
-                            ] as GlossaryStatus[]
-                          ).map((st) => (
-                            <option
-                              key={st}
-                              value={st}
-                              className="bg-white text-slate-900 dark:bg-zinc-900 dark:text-zinc-100"
-                            >
-                              {GLOSSARY_STATUS_META[st].label}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-
-                      <td className="px-2 py-1 text-center">
-                        <button
-                          type="button"
-                          title="Xóa thuật ngữ"
-                          onClick={() => void handleDeleteOne(term)}
-                          className="p-1 rounded text-slate-300 dark:text-zinc-600 group-hover:text-slate-400 hover:!text-rose-600 cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </td>
+                <>
+                  {topSpacerHeight > 0 && (
+                    <tr aria-hidden="true">
+                      <td colSpan={11} style={{ height: `${topSpacerHeight}px`, padding: 0 }} />
                     </tr>
-                  )
-                })
+                  )}
+                  {visibleSlice.map((term, localIdx) => {
+                    const rowIdx = startIdx + localIdx
+                    const checked = isRowSelected(term.id)
+                    const freqValue =
+                      effectiveVolumeId !== null && term.volume_freq !== null
+                        ? term.volume_freq
+                        : term.total_freq
+                    return (
+                      <tr
+                        key={term.id}
+                        style={
+                          isVirtualized ? { height: `${ROW_HEIGHT}px` } : undefined
+                        }
+                        onClick={(e) => handleRowClick(e, rowIdx, term.id)}
+                        className={`group transition-colors select-none ${
+                          checked
+                            ? 'bg-indigo-50/80 dark:bg-indigo-500/15'
+                            : 'hover:bg-slate-50/80 dark:hover:bg-zinc-800/40'
+                        } ${savingTermId === term.id ? 'opacity-70' : ''}`}
+                      >
+                        <td className="px-3 py-1.5 text-center">
+                          <input
+                            type="checkbox"
+                            aria-label={`Chọn ${term.source_term}`}
+                            checked={checked}
+                            onChange={() => {}}
+                            onClick={(e) =>
+                              handleCheckboxClick(e, rowIdx, term.id)
+                            }
+                            className="rounded border-slate-300 text-indigo-600 cursor-pointer"
+                          />
+                        </td>
+
+                        <td className="px-3 py-1.5 font-semibold text-sm text-slate-900 dark:text-zinc-100 cursor-pointer">
+                          {term.source_term}
+                        </td>
+
+                        <td className="px-2 py-1.5 text-center">
+                          <span
+                            className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-semibold ${
+                              term.first_seen_vol <= 0
+                                ? 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300'
+                                : 'bg-slate-100 text-slate-600 dark:bg-zinc-800 dark:text-zinc-400'
+                            }`}
+                          >
+                            {formatFirstSeenVol(term.first_seen_vol)}
+                          </span>
+                        </td>
+
+                        <td className="px-2 py-1.5 text-center font-mono font-semibold text-slate-700 dark:text-zinc-300">
+                          {freqValue}
+                        </td>
+
+                        <td className="px-1.5 py-1">
+                          <InlineCellInput
+                            value={term.vi_term}
+                            placeholder="Nhập nghĩa Việt..."
+                            onCommit={(v) =>
+                              void handleInlinePatch(term, { vi_term: v })
+                            }
+                          />
+                        </td>
+
+                        <td className="px-1.5 py-1">
+                          <InlineCellInput
+                            value={term.reading}
+                            placeholder="Romaji/Pinyin..."
+                            onCommit={(v) =>
+                              void handleInlinePatch(term, { reading: v })
+                            }
+                          />
+                        </td>
+
+                        <td className="px-1.5 py-1">
+                          <InlineCellInput
+                            value={term.han_viet}
+                            placeholder="Hán-Việt..."
+                            onCommit={(v) =>
+                              void handleInlinePatch(term, { han_viet: v })
+                            }
+                          />
+                        </td>
+
+                        <td className="px-1.5 py-1">
+                          <InlineCellInput
+                            value={term.english_meaning}
+                            placeholder="English..."
+                            onCommit={(v) =>
+                              void handleInlinePatch(term, {
+                                english_meaning: v,
+                              })
+                            }
+                          />
+                        </td>
+
+                        <td className="px-1.5 py-1">
+                          <select
+                            aria-label={`Loại của ${term.source_term}`}
+                            value={term.term_type}
+                            onChange={(e) =>
+                              void handleInlinePatch(term, {
+                                term_type: e.target.value,
+                              })
+                            }
+                            className="w-full px-2 py-1 rounded-md border border-transparent hover:border-slate-200 dark:hover:border-zinc-700 focus:border-indigo-500 bg-transparent focus:bg-white dark:focus:bg-zinc-950 text-xs focus:outline-none"
+                          >
+                            {TERM_TYPES.map((t) => (
+                              <option
+                                key={t}
+                                value={t}
+                                className="bg-white dark:bg-zinc-900"
+                              >
+                                {t}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+
+                        <td className="px-1.5 py-1">
+                          <select
+                            aria-label={`Trạng thái của ${term.source_term}`}
+                            value={term.status}
+                            onChange={(e) =>
+                              void handleInlinePatch(term, {
+                                status: e.target.value as GlossaryStatus,
+                              })
+                            }
+                            className={`w-full px-2 py-1 rounded-full text-[11px] font-medium border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/40 ${GLOSSARY_STATUS_META[term.status].badgeClass}`}
+                          >
+                            {(
+                              [
+                                'new',
+                                'translated',
+                                'approved',
+                                'ignored',
+                              ] as GlossaryStatus[]
+                            ).map((st) => (
+                              <option
+                                key={st}
+                                value={st}
+                                className="bg-white text-slate-900 dark:bg-zinc-900 dark:text-zinc-100"
+                              >
+                                {GLOSSARY_STATUS_META[st].label}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+
+                        <td className="px-2 py-1 text-center">
+                          <button
+                            type="button"
+                            title="Xóa thuật ngữ"
+                            onClick={() => void handleDeleteOne(term)}
+                            className="p-1 rounded text-slate-300 dark:text-zinc-600 group-hover:text-slate-400 hover:!text-rose-600 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                  {bottomSpacerHeight > 0 && (
+                    <tr aria-hidden="true">
+                      <td
+                        colSpan={11}
+                        style={{ height: `${bottomSpacerHeight}px`, padding: 0 }}
+                      />
+                    </tr>
+                  )}
+                </>
               )}
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Footer */}
+        <div className="px-4 py-2.5 border-t border-slate-200 dark:border-zinc-800 bg-slate-50/70 dark:bg-zinc-950/60 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600 dark:text-zinc-400">
+          <div className="flex flex-wrap items-center gap-3">
+            <span>
+              Hiển thị{' '}
+              <strong>
+                {showingFrom.toLocaleString('vi-VN')}–
+                {showingTo.toLocaleString('vi-VN')}
+              </strong>{' '}
+              / <strong>{totalCount.toLocaleString('vi-VN')}</strong> kết quả
+              {isVirtualized && (
+                <span className="ml-2 px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold">
+                  Virtual List
+                </span>
+              )}
+            </span>
+
+            {totalCount > 0 && !selectAllMatching && (
+              <button
+                type="button"
+                onClick={handleSelectAllMatchingFilter}
+                className="text-indigo-600 dark:text-indigo-400 hover:underline font-semibold cursor-pointer"
+              >
+                Chọn tất cả {totalCount.toLocaleString('vi-VN')} từ khớp bộ lọc
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="inline-flex items-center gap-1.5">
+              <span>Hiển thị:</span>
+              <select
+                aria-label="Số dòng mỗi trang"
+                value={pageSize}
+                onChange={(e) =>
+                  setPageSize(Number(e.target.value) as PageSizeOption)
+                }
+                className="px-2 py-1 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 font-medium text-xs"
+              >
+                <option value={100}>100 / trang</option>
+                <option value={500}>500 / trang</option>
+                <option value={1000}>1.000 / trang</option>
+                <option value={0}>Tất cả (Virtual List)</option>
+              </select>
+            </div>
+
+            {pageSize > 0 && (
+              <div className="inline-flex items-center gap-1">
+                <button
+                  type="button"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="p-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 disabled:opacity-35 hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer"
+                  title="Trang trước"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <span className="px-2 font-mono font-semibold text-slate-800 dark:text-zinc-200">
+                  Trang {page} / {totalPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  className="p-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 disabled:opacity-35 hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer"
+                  title="Trang sau"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
+      {/* Floating Bottom Bulk Action Bar */}
+      {effectiveSelectedCount > 0 && (
+        <div className="sticky bottom-3 z-30 flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-slate-900/95 dark:bg-zinc-900/95 text-white border border-slate-700/80 shadow-2xl backdrop-blur-sm text-xs">
+          <div className="flex items-center gap-2 font-semibold">
+            <span className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white font-mono">
+              {effectiveSelectedCount.toLocaleString('vi-VN')}
+            </span>
+            <span>
+              {selectAllMatching
+                ? 'từ khớp bộ lọc hiện tại đang chọn'
+                : 'thuật ngữ đang chọn'}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Bulk Status */}
+            <button
+              type="button"
+              disabled={bulkBusy || translatingSelected}
+              onClick={() => void handleBulkStatus('approved')}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold disabled:opacity-45 cursor-pointer"
+            >
+              <CheckCheck className="w-3.5 h-3.5" />
+              Duyệt
+            </button>
+            <button
+              type="button"
+              disabled={bulkBusy || translatingSelected}
+              onClick={() => void handleBulkStatus('translated')}
+              className="px-2.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-semibold disabled:opacity-45 cursor-pointer"
+            >
+              Đã dịch
+            </button>
+            <button
+              type="button"
+              disabled={bulkBusy || translatingSelected}
+              onClick={() => void handleBulkStatus('ignored')}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-semibold disabled:opacity-45 cursor-pointer"
+            >
+              <Ban className="w-3.5 h-3.5" />
+              Bỏ qua
+            </button>
+            <button
+              type="button"
+              disabled={bulkBusy || translatingSelected}
+              onClick={() => void handleBulkStatus('new')}
+              className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white disabled:opacity-45 cursor-pointer"
+            >
+              Chưa dịch
+            </button>
+
+            {/* Bulk Type */}
+            <select
+              aria-label="Đổi loại hàng loạt"
+              disabled={bulkBusy || translatingSelected}
+              value=""
+              onChange={(e) => {
+                if (e.target.value) void handleBulkType(e.target.value)
+              }}
+              className="px-2.5 py-1.5 rounded-lg bg-slate-800 border border-slate-600 text-white text-xs font-medium cursor-pointer disabled:opacity-45"
+            >
+              <option value="">Đổi loại...</option>
+              {TERM_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  → {t}
+                </option>
+              ))}
+            </select>
+
+            {/* Re-translate selected with AI */}
+            <button
+              type="button"
+              disabled={bulkBusy || translatingSelected}
+              onClick={() => void handleTranslateSelected()}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold disabled:opacity-45 cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              {translatingSelected ? 'Đang dịch AI...' : 'Dịch lại AI'}
+            </button>
+
+            {/* Bulk Delete */}
+            <button
+              type="button"
+              disabled={bulkBusy || translatingSelected}
+              onClick={() => void handleBulkDelete()}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-semibold disabled:opacity-45 cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Xóa
+            </button>
+
+            <button
+              type="button"
+              onClick={clearSelection}
+              className="px-2 py-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 cursor-pointer"
+            >
+              Bỏ chọn
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Import Volume Book Modal */}
-      {importModalOpen && selectedVolume && (
+      {importBookModalOpen && selectedVolume && (
         <ImportVolumeModal
           volume={selectedVolume}
           seriesTitle={selectedSeries.title}
-          onClose={() => setImportModalOpen(false)}
+          onClose={() => setImportBookModalOpen(false)}
           onImported={(res) => {
             notify(
-              `Đã nhập ${res.chapters_imported} chương vào Tập ${selectedVolume.volume_number}. Bạn có thể bấm "Đếm từ cho Tập này" ngay.`,
+              `Đã nhập ${res.chapters_imported} chương vào ${formatVolumeLabel(selectedVolume)}. Bạn có thể bấm "Đếm từ cho Tập này" ngay.`,
             )
+          }}
+        />
+      )}
+
+      {/* 2-Step Historical TSV / CSV Import Modal */}
+      {importTsvModalOpen && (
+        <GlossaryImportModal
+          series={selectedSeries}
+          selectedVolume={selectedVolume}
+          onClose={() => setImportTsvModalOpen(false)}
+          onImported={(res) => {
+            notify(
+              `Đã nhập TSV/CSV: +${res.imported.toLocaleString('vi-VN')} từ mới, cập nhật ${res.updated.toLocaleString('vi-VN')} từ${res.skipped > 0 ? `, bỏ qua ${res.skipped.toLocaleString('vi-VN')} từ` : ''}.`,
+            )
+            void loadGlossary()
           }}
         />
       )}
@@ -987,8 +1716,8 @@ export function GlossaryTab({
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
-                <div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="col-span-2 sm:col-span-1">
                   <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-1">
                     Nghĩa Anh
                   </label>
@@ -1002,6 +1731,23 @@ export function GlossaryTab({
                       })
                     }
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-1">
+                    Tập đầu (0=Gốc)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={newTermForm.first_seen_vol}
+                    onChange={(e) =>
+                      setNewTermForm({
+                        ...newTermForm,
+                        first_seen_vol: Math.max(0, Number(e.target.value) || 0),
+                      })
+                    }
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950 text-center"
                   />
                 </div>
                 <div>
@@ -1107,7 +1853,7 @@ function InlineCellInput({
           e.currentTarget.blur()
         }
       }}
-      className="w-full px-2 py-1.5 rounded-md border border-transparent hover:border-slate-200 dark:hover:border-zinc-700 focus:border-indigo-500 bg-transparent focus:bg-white dark:focus:bg-zinc-950 text-xs text-slate-800 dark:text-zinc-100 placeholder:text-slate-300 dark:placeholder:text-zinc-600 focus:outline-none"
+      className="w-full px-2 py-1 rounded-md border border-transparent hover:border-slate-200 dark:hover:border-zinc-700 focus:border-indigo-500 bg-transparent focus:bg-white dark:focus:bg-zinc-950 text-xs text-slate-800 dark:text-zinc-100 placeholder:text-slate-300 dark:placeholder:text-zinc-600 focus:outline-none select-text"
     />
   )
 }

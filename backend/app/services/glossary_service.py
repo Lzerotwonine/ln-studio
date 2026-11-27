@@ -252,54 +252,25 @@ def _build_translation_prompt(
     )
 
 
-def translate_new_glossary_terms(
-    series_id: int,
+def _run_gemini_glossary_batches(
+    terms_to_translate: list[dict[str, Any]],
     *,
+    series_id: int,
+    series_title: str,
+    source_lang: str,
     volume_id: int | None = None,
     batch_size: int = 400,
     max_rounds: int = 3,
+    only_status_new: bool = True,
+    model_override: str | None = None,
     pool: GeminiPool | None = None,
     db_path: Path | str | None = None,
 ) -> dict[str, Any]:
-    """Translate only status='new' terms via Gemini Pool in 300-500 batches with up to 3 reconciliation rounds."""
+    """Shared batched Gemini translation + multi-round reconciliation for glossary terms."""
     batch_size = max(1, min(500, int(batch_size)))
     max_rounds = max(1, min(5, int(max_rounds)))
     active_pool = pool or gemini_pool
 
-    with db_session(db_path) as conn:
-        series_row = conn.execute(
-            "SELECT id, title, source_lang FROM series WHERE id = ?",
-            (series_id,),
-        ).fetchone()
-        if series_row is None:
-            raise LookupError("Không tìm thấy bộ truyện.")
-
-        series_title = str(series_row["title"])
-        source_lang = str(series_row["source_lang"])
-
-        if volume_id is not None:
-            rows = conn.execute(
-                """
-                SELECT g.id, g.source_term, g.normalized_key, vgf.freq AS freq
-                FROM glossary_terms g
-                JOIN volume_glossary_freq vgf ON vgf.term_id = g.id
-                WHERE g.series_id = ? AND vgf.volume_id = ? AND g.status = 'new'
-                ORDER BY vgf.freq DESC, g.id ASC
-                """,
-                (series_id, volume_id),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                """
-                SELECT id, source_term, normalized_key, total_freq AS freq
-                FROM glossary_terms
-                WHERE series_id = ? AND status = 'new'
-                ORDER BY total_freq DESC, id ASC
-                """,
-                (series_id,),
-            ).fetchall()
-
-    terms_to_translate = [dict(r) for r in rows]
     if not terms_to_translate:
         return {
             "series_id": series_id,
@@ -318,6 +289,7 @@ def translate_new_glossary_terms(
     used_slots: list[str] = []
     batches_processed = 0
     max_round_reached = 0
+    status_guard = "AND status = 'new'" if only_status_new else ""
 
     for offset in range(0, len(terms_to_translate), batch_size):
         batch = terms_to_translate[offset : offset + batch_size]
@@ -337,6 +309,8 @@ def translate_new_glossary_terms(
                 prompt,
                 system_instruction=_GLOSSARY_SYSTEM_PROMPT,
                 temperature=0.2,
+                task_type="glossary_translate",
+                models=[model_override] if model_override and model_override.strip() else None,
             )
             if resp.slot_id not in used_slots:
                 used_slots.append(resp.slot_id)
@@ -382,7 +356,7 @@ def translate_new_glossary_terms(
                 with db_session(db_path) as conn:
                     for vi_term, reading, han_viet, eng, t_type, term_id in matched_updates:
                         cur = conn.execute(
-                            """
+                            f"""
                             UPDATE glossary_terms
                             SET vi_term = ?,
                                 reading = CASE WHEN ? != '' THEN ? ELSE reading END,
@@ -390,7 +364,7 @@ def translate_new_glossary_terms(
                                 english_meaning = ?,
                                 term_type = ?,
                                 status = 'translated'
-                            WHERE id = ? AND status = 'new'
+                            WHERE id = ? {status_guard}
                             """,
                             (vi_term, reading, reading, han_viet, eng, t_type, term_id),
                         )
@@ -412,47 +386,420 @@ def translate_new_glossary_terms(
     }
 
 
+def translate_new_glossary_terms(
+    series_id: int,
+    *,
+    volume_id: int | None = None,
+    batch_size: int = 400,
+    max_rounds: int = 3,
+    model_override: str | None = None,
+    pool: GeminiPool | None = None,
+    db_path: Path | str | None = None,
+) -> dict[str, Any]:
+    """Translate only status='new' terms via Gemini Pool in 300-500 batches with up to 3 reconciliation rounds."""
+    with db_session(db_path) as conn:
+        series_row = conn.execute(
+            "SELECT id, title, source_lang FROM series WHERE id = ?",
+            (series_id,),
+        ).fetchone()
+        if series_row is None:
+            raise LookupError("Không tìm thấy bộ truyện.")
+
+        series_title = str(series_row["title"])
+        source_lang = str(series_row["source_lang"])
+
+        if volume_id is not None:
+            rows = conn.execute(
+                """
+                SELECT g.id, g.source_term, g.normalized_key, vgf.freq AS freq
+                FROM glossary_terms g
+                INNER JOIN volume_glossary_freq vgf
+                    ON vgf.term_id = g.id AND vgf.volume_id = ?
+                WHERE g.series_id = ? AND vgf.freq > 0 AND g.status = 'new'
+                ORDER BY vgf.freq DESC, g.id ASC
+                """,
+                (volume_id, series_id),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT id, source_term, normalized_key, total_freq AS freq
+                FROM glossary_terms
+                WHERE series_id = ? AND status = 'new'
+                ORDER BY total_freq DESC, id ASC
+                """,
+                (series_id,),
+            ).fetchall()
+
+    return _run_gemini_glossary_batches(
+        [dict(r) for r in rows],
+        series_id=series_id,
+        series_title=series_title,
+        source_lang=source_lang,
+        volume_id=volume_id,
+        batch_size=batch_size,
+        max_rounds=max_rounds,
+        only_status_new=True,
+        model_override=model_override,
+        pool=pool,
+        db_path=db_path,
+    )
+
+
+def _chunked(items: list[int], size: int = 500) -> Iterable[list[int]]:
+    for idx in range(0, len(items), size):
+        yield items[idx : idx + size]
+
+
+def _build_glossary_query_parts(
+    conn: sqlite3.Connection,
+    series_id: int,
+    *,
+    volume_id: int | None = None,
+    status_filter: str | None = None,
+    term_type: str | None = None,
+    min_freq: int | None = None,
+    max_freq: int | None = None,
+    missing_vi: bool = False,
+    missing_han_viet: bool = False,
+    first_seen_vol: int | None = None,
+    search: str | None = None,
+    exclude_ids: Iterable[int] | None = None,
+) -> dict[str, Any]:
+    """Build strict SQL scope (INNER JOIN volume_glossary_freq when volume_id given) + filters."""
+    series = conn.execute("SELECT id FROM series WHERE id = ?", (series_id,)).fetchone()
+    if series is None:
+        raise LookupError("Không tìm thấy bộ truyện.")
+
+    if volume_id is not None:
+        vol = conn.execute(
+            "SELECT id FROM volumes WHERE id = ? AND series_id = ?",
+            (volume_id, series_id),
+        ).fetchone()
+        if vol is None:
+            raise LookupError("Không tìm thấy tập truyện thuộc bộ truyện này.")
+        base_from = (
+            "FROM glossary_terms g "
+            "INNER JOIN volume_glossary_freq vgf "
+            "ON vgf.term_id = g.id AND vgf.volume_id = ?"
+        )
+        scope_where = "g.series_id = ? AND vgf.freq > 0"
+        scope_params: list[Any] = [volume_id, series_id]
+        freq_col = "vgf.freq"
+        select_extra = ", vgf.freq AS volume_freq"
+    else:
+        base_from = "FROM glossary_terms g"
+        scope_where = "g.series_id = ?"
+        scope_params = [series_id]
+        freq_col = "g.total_freq"
+        select_extra = ", NULL AS volume_freq"
+
+    where_clauses = [scope_where]
+    params = list(scope_params)
+
+    if status_filter and status_filter in VALID_GLOSSARY_STATUSES:
+        where_clauses.append("g.status = ?")
+        params.append(status_filter)
+    if term_type:
+        where_clauses.append("g.term_type = ?")
+        params.append(term_type)
+    if min_freq is not None and min_freq > 1:
+        where_clauses.append(f"{freq_col} >= ?")
+        params.append(int(min_freq))
+    if max_freq is not None and max_freq >= 1:
+        where_clauses.append(f"{freq_col} <= ?")
+        params.append(int(max_freq))
+    if missing_vi:
+        where_clauses.append("TRIM(COALESCE(g.vi_term, '')) = ''")
+    if missing_han_viet:
+        where_clauses.append("TRIM(COALESCE(g.han_viet, '')) = ''")
+    if first_seen_vol is not None:
+        where_clauses.append("g.first_seen_vol = ?")
+        params.append(int(first_seen_vol))
+    if search and search.strip():
+        like = f"%{search.strip()}%"
+        where_clauses.append(
+            "(g.source_term LIKE ? OR g.vi_term LIKE ? OR g.reading LIKE ? "
+            "OR g.han_viet LIKE ? OR g.english_meaning LIKE ?)"
+        )
+        params.extend([like, like, like, like, like])
+
+    excl = sorted({int(i) for i in (exclude_ids or [])})
+    if excl and len(excl) <= 400:
+        ph = ",".join("?" for _ in excl)
+        where_clauses.append(f"g.id NOT IN ({ph})")
+        params.extend(excl)
+
+    return {
+        "base_from": base_from,
+        "scope_where": scope_where,
+        "scope_params": scope_params,
+        "where_sql": " AND ".join(where_clauses),
+        "params": params,
+        "freq_col": freq_col,
+        "select_extra": select_extra,
+        "extra_exclude_set": set(excl) if len(excl) > 400 else set(),
+    }
+
+
+def _resolve_target_term_ids(
+    conn: sqlite3.Connection,
+    *,
+    series_id: int | None = None,
+    term_ids: Iterable[int] = (),
+    apply_to_filter: bool = False,
+    filter_criteria: dict[str, Any] | None = None,
+    exclude_ids: Iterable[int] = (),
+) -> list[int]:
+    """Resolve term IDs from either explicit IDs or an active filter specification."""
+    excl_set = {int(i) for i in exclude_ids}
+    if apply_to_filter:
+        if series_id is None:
+            raise ValueError("Cần chỉ định series_id khi áp dụng thao tác hàng loạt theo bộ lọc.")
+        fc = filter_criteria or {}
+        parts = _build_glossary_query_parts(
+            conn,
+            series_id,
+            volume_id=fc.get("volume_id"),
+            status_filter=fc.get("status"),
+            term_type=fc.get("term_type"),
+            min_freq=fc.get("min_freq"),
+            max_freq=fc.get("max_freq"),
+            missing_vi=bool(fc.get("missing_vi", False)),
+            missing_han_viet=bool(fc.get("missing_han_viet", False)),
+            first_seen_vol=fc.get("first_seen_vol"),
+            search=fc.get("search"),
+            exclude_ids=excl_set,
+        )
+        rows = conn.execute(
+            f"SELECT g.id {parts['base_from']} WHERE {parts['where_sql']} ORDER BY {parts['freq_col']} DESC, g.id ASC",
+            parts["params"],
+        ).fetchall()
+        extra_excl: set[int] = parts["extra_exclude_set"]
+        return [int(r["id"]) for r in rows if int(r["id"]) not in extra_excl]
+
+    unique_ids: list[int] = []
+    seen: set[int] = set()
+    for raw_id in term_ids:
+        tid = int(raw_id)
+        if tid in excl_set or tid in seen:
+            continue
+        seen.add(tid)
+        unique_ids.append(tid)
+
+    if series_id is not None and unique_ids:
+        scoped: list[int] = []
+        for chunk in _chunked(unique_ids, 500):
+            ph = ",".join("?" for _ in chunk)
+            rows = conn.execute(
+                f"SELECT id FROM glossary_terms WHERE series_id = ? AND id IN ({ph})",
+                [series_id, *chunk],
+            ).fetchall()
+            scoped.extend(int(r["id"]) for r in rows)
+        return scoped
+
+    return unique_ids
+
+
+def bulk_update_glossary_status_service(
+    status: str,
+    *,
+    series_id: int | None = None,
+    term_ids: Iterable[int] = (),
+    apply_to_filter: bool = False,
+    filter_criteria: dict[str, Any] | None = None,
+    exclude_ids: Iterable[int] = (),
+    db_path: Path | str | None = None,
+) -> int:
+    if status not in VALID_GLOSSARY_STATUSES:
+        raise ValueError(f"Trạng thái không hợp lệ: {status}")
+    updated = 0
+    with db_session(db_path) as conn:
+        ids = _resolve_target_term_ids(
+            conn,
+            series_id=series_id,
+            term_ids=term_ids,
+            apply_to_filter=apply_to_filter,
+            filter_criteria=filter_criteria,
+            exclude_ids=exclude_ids,
+        )
+        for chunk in _chunked(ids, 500):
+            ph = ",".join("?" for _ in chunk)
+            cur = conn.execute(
+                f"UPDATE glossary_terms SET status = ? WHERE id IN ({ph})",
+                [status, *chunk],
+            )
+            updated += cur.rowcount
+    return updated
+
+
+def bulk_update_glossary_type_service(
+    term_type: str,
+    *,
+    series_id: int | None = None,
+    term_ids: Iterable[int] = (),
+    apply_to_filter: bool = False,
+    filter_criteria: dict[str, Any] | None = None,
+    exclude_ids: Iterable[int] = (),
+    db_path: Path | str | None = None,
+) -> int:
+    normalized_type = _normalize_term_type(term_type)
+    updated = 0
+    with db_session(db_path) as conn:
+        ids = _resolve_target_term_ids(
+            conn,
+            series_id=series_id,
+            term_ids=term_ids,
+            apply_to_filter=apply_to_filter,
+            filter_criteria=filter_criteria,
+            exclude_ids=exclude_ids,
+        )
+        for chunk in _chunked(ids, 500):
+            ph = ",".join("?" for _ in chunk)
+            cur = conn.execute(
+                f"UPDATE glossary_terms SET term_type = ? WHERE id IN ({ph})",
+                [normalized_type, *chunk],
+            )
+            updated += cur.rowcount
+    return updated
+
+
+def bulk_delete_glossary_terms_service(
+    *,
+    series_id: int | None = None,
+    term_ids: Iterable[int] = (),
+    apply_to_filter: bool = False,
+    filter_criteria: dict[str, Any] | None = None,
+    exclude_ids: Iterable[int] = (),
+    db_path: Path | str | None = None,
+) -> int:
+    deleted = 0
+    with db_session(db_path) as conn:
+        ids = _resolve_target_term_ids(
+            conn,
+            series_id=series_id,
+            term_ids=term_ids,
+            apply_to_filter=apply_to_filter,
+            filter_criteria=filter_criteria,
+            exclude_ids=exclude_ids,
+        )
+        for chunk in _chunked(ids, 500):
+            ph = ",".join("?" for _ in chunk)
+            cur = conn.execute(
+                f"DELETE FROM glossary_terms WHERE id IN ({ph})",
+                chunk,
+            )
+            deleted += cur.rowcount
+    return deleted
+
+
+def translate_selected_glossary_terms(
+    series_id: int,
+    *,
+    term_ids: Iterable[int] = (),
+    apply_to_filter: bool = False,
+    filter_criteria: dict[str, Any] | None = None,
+    exclude_ids: Iterable[int] = (),
+    batch_size: int = 400,
+    max_rounds: int = 3,
+    model_override: str | None = None,
+    pool: GeminiPool | None = None,
+    db_path: Path | str | None = None,
+) -> dict[str, Any]:
+    """Re-translate ONLY the explicitly selected (or filter-matched) terms via Gemini Pool."""
+    with db_session(db_path) as conn:
+        series_row = conn.execute(
+            "SELECT id, title, source_lang FROM series WHERE id = ?",
+            (series_id,),
+        ).fetchone()
+        if series_row is None:
+            raise LookupError("Không tìm thấy bộ truyện.")
+
+        series_title = str(series_row["title"])
+        source_lang = str(series_row["source_lang"])
+
+        target_ids = _resolve_target_term_ids(
+            conn,
+            series_id=series_id,
+            term_ids=term_ids,
+            apply_to_filter=apply_to_filter,
+            filter_criteria=filter_criteria,
+            exclude_ids=exclude_ids,
+        )
+
+        rows: list[dict[str, Any]] = []
+        for chunk in _chunked(target_ids, 500):
+            ph = ",".join("?" for _ in chunk)
+            fetched = conn.execute(
+                f"""
+                SELECT id, source_term, normalized_key, total_freq AS freq
+                FROM glossary_terms
+                WHERE series_id = ? AND id IN ({ph})
+                ORDER BY total_freq DESC, id ASC
+                """,
+                [series_id, *chunk],
+            ).fetchall()
+            rows.extend(dict(r) for r in fetched)
+
+    vol_id = (filter_criteria or {}).get("volume_id") if apply_to_filter else None
+    return _run_gemini_glossary_batches(
+        rows,
+        series_id=series_id,
+        series_title=series_title,
+        source_lang=source_lang,
+        volume_id=vol_id,
+        batch_size=batch_size,
+        max_rounds=max_rounds,
+        only_status_new=False,
+        model_override=model_override,
+        pool=pool,
+        db_path=db_path,
+    )
+
+
 def list_glossary_terms(
     series_id: int,
     *,
     volume_id: int | None = None,
     status_filter: str | None = None,
     term_type: str | None = None,
-    min_freq: int = 1,
+    min_freq: int | None = None,
+    max_freq: int | None = None,
+    missing_vi: bool = False,
+    missing_han_viet: bool = False,
+    first_seen_vol: int | None = None,
     search: str | None = None,
-    limit: int = 1000,
+    sort_by: str = "freq",
+    sort_dir: str = "desc",
+    limit: int | None = 100,
     offset: int = 0,
     db_path: Path | str | None = None,
 ) -> dict[str, Any]:
-    """Query glossary terms for a series or specific volume with filters and status counts."""
+    """Query glossary terms for a series or specific volume with pagination, sorting, and advanced filters."""
     with db_session(db_path) as conn:
-        series = conn.execute("SELECT id FROM series WHERE id = ?", (series_id,)).fetchone()
-        if series is None:
-            raise LookupError("Không tìm thấy bộ truyện.")
+        parts = _build_glossary_query_parts(
+            conn,
+            series_id,
+            volume_id=volume_id,
+            status_filter=status_filter,
+            term_type=term_type,
+            min_freq=min_freq,
+            max_freq=max_freq,
+            missing_vi=missing_vi,
+            missing_han_viet=missing_han_viet,
+            first_seen_vol=first_seen_vol,
+            search=search,
+        )
 
-        if volume_id is not None:
-            base_from = (
-                "FROM glossary_terms g "
-                "JOIN volume_glossary_freq vgf ON vgf.term_id = g.id AND vgf.volume_id = ?"
-            )
-            base_params: list[Any] = [volume_id, series_id]
-            freq_col = "vgf.freq"
-            select_extra = ", vgf.freq AS volume_freq"
-        else:
-            base_from = "FROM glossary_terms g"
-            base_params = [series_id]
-            freq_col = "g.total_freq"
-            select_extra = ", NULL AS volume_freq"
-
-        # Status counts within the current scope (series or volume) before status filter
+        # Status counts within the current scope (series or volume) before status/search filters
         count_rows = conn.execute(
             f"""
             SELECT g.status, COUNT(*) AS cnt
-            {base_from}
-            WHERE g.series_id = ?
+            {parts['base_from']}
+            WHERE {parts['scope_where']}
             GROUP BY g.status
             """,
-            base_params,
+            parts["scope_params"],
         ).fetchall()
         status_counts = {s: 0 for s in VALID_GLOSSARY_STATUSES}
         for r in count_rows:
@@ -460,51 +807,66 @@ def list_glossary_terms(
                 status_counts[r["status"]] = int(r["cnt"])
         total_in_scope = sum(status_counts.values())
 
-        where_clauses = ["g.series_id = ?"]
-        params = list(base_params)
+        distinct_vol_rows = conn.execute(
+            f"""
+            SELECT DISTINCT g.first_seen_vol
+            {parts['base_from']}
+            WHERE {parts['scope_where']}
+            ORDER BY g.first_seen_vol ASC
+            """,
+            parts["scope_params"],
+        ).fetchall()
+        distinct_first_seen_vols = [int(r["first_seen_vol"]) for r in distinct_vol_rows]
 
-        if status_filter and status_filter in VALID_GLOSSARY_STATUSES:
-            where_clauses.append("g.status = ?")
-            params.append(status_filter)
-        if term_type:
-            where_clauses.append("g.term_type = ?")
-            params.append(term_type)
-        if min_freq > 1:
-            where_clauses.append(f"{freq_col} >= ?")
-            params.append(min_freq)
-        if search and search.strip():
-            like = f"%{search.strip()}%"
-            where_clauses.append(
-                "(g.source_term LIKE ? OR g.vi_term LIKE ? OR g.reading LIKE ? "
-                "OR g.han_viet LIKE ? OR g.english_meaning LIKE ?)"
-            )
-            params.extend([like, like, like, like, like])
-
-        where_sql = " AND ".join(where_clauses)
         filtered_total = int(
             conn.execute(
-                f"SELECT COUNT(*) AS cnt {base_from} WHERE {where_sql}",
-                params,
+                f"SELECT COUNT(*) AS cnt {parts['base_from']} WHERE {parts['where_sql']}",
+                parts["params"],
             ).fetchone()["cnt"]
         )
 
-        rows = conn.execute(
-            f"""
-            SELECT g.*{select_extra}
-            {base_from}
-            WHERE {where_sql}
-            ORDER BY {freq_col} DESC, g.id ASC
-            LIMIT ? OFFSET ?
-            """,
-            [*params, max(1, min(5000, limit)), max(0, offset)],
-        ).fetchall()
+        sort_column_map = {
+            "source_term": "g.source_term COLLATE NOCASE",
+            "vi_term": "g.vi_term COLLATE NOCASE",
+            "freq": parts["freq_col"],
+            "first_seen_vol": "g.first_seen_vol",
+            "term_type": "g.term_type COLLATE NOCASE",
+            "status": "g.status",
+        }
+        order_col = sort_column_map.get(sort_by, parts["freq_col"])
+        order_dir = "ASC" if str(sort_dir).lower() == "asc" else "DESC"
+        order_sql = f"ORDER BY {order_col} {order_dir}, g.id ASC"
+
+        if limit is None or int(limit) <= 0:
+            rows = conn.execute(
+                f"""
+                SELECT g.*{parts['select_extra']}
+                {parts['base_from']}
+                WHERE {parts['where_sql']}
+                {order_sql}
+                """,
+                parts["params"],
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                f"""
+                SELECT g.*{parts['select_extra']}
+                {parts['base_from']}
+                WHERE {parts['where_sql']}
+                {order_sql}
+                LIMIT ? OFFSET ?
+                """,
+                [*parts["params"], int(limit), max(0, int(offset))],
+            ).fetchall()
 
     items = [dict(r) for r in rows]
     return {
         "items": items,
+        "total_count": filtered_total,
         "total_filtered": filtered_total,
         "total_in_scope": total_in_scope,
         "status_counts": status_counts,
+        "distinct_first_seen_vols": distinct_first_seen_vols,
     }
 
 
@@ -576,11 +938,17 @@ def import_glossary_tabular(
     file_bytes: bytes,
     *,
     default_status: str = "approved",
+    duplicate_mode: str = "upsert",
+    default_first_seen_vol: int = 0,
+    force_default_status: bool = True,
     db_path: Path | str | None = None,
 ) -> dict[str, int]:
-    """Import TSV or CSV glossary file (e.g., from legacy Excel sheets) into Master DB."""
+    """Import TSV or CSV glossary file (including 2-step historical Excel sync) into Master DB."""
     if default_status not in VALID_GLOSSARY_STATUSES:
         default_status = "approved"
+    if duplicate_mode not in ("skip", "upsert"):
+        duplicate_mode = "upsert"
+    fallback_vol = max(0, int(default_first_seen_vol))
 
     text = decode_text_bytes(file_bytes).lstrip("\ufeff")
     if not text.strip():
@@ -633,10 +1001,16 @@ def import_glossary_tabular(
             reading = _cell(row, "reading")
             han_viet = _cell(row, "han_viet")
             english_meaning = _cell(row, "english_meaning")
-            term_type = _normalize_term_type(_cell(row, "term_type"))
+            raw_type = _cell(row, "term_type")
+            term_type = _normalize_term_type(raw_type)
             raw_status = _cell(row, "status").lower()
-            if raw_status in VALID_GLOSSARY_STATUSES:
+
+            if force_default_status:
+                row_status = default_status
+            elif raw_status in VALID_GLOSSARY_STATUSES:
                 row_status = raw_status
+            elif default_status == "ignored":
+                row_status = "ignored"
             else:
                 row_status = default_status if vi_term else "new"
 
@@ -644,17 +1018,26 @@ def import_glossary_tabular(
                 freq = max(1, int(_cell(row, "total_freq") or 1))
             except ValueError:
                 freq = 1
-            try:
-                first_vol = max(1, int(_cell(row, "first_seen_vol") or 1))
-            except ValueError:
-                first_vol = 1
+
+            raw_vol_cell = _cell(row, "first_seen_vol")
+            if raw_vol_cell != "":
+                try:
+                    first_vol = max(0, int(raw_vol_cell))
+                except ValueError:
+                    first_vol = fallback_vol
+            else:
+                first_vol = fallback_vol
 
             existing = conn.execute(
-                "SELECT id FROM glossary_terms WHERE series_id = ? AND normalized_key = ?",
+                "SELECT id, first_seen_vol FROM glossary_terms WHERE series_id = ? AND normalized_key = ?",
                 (series_id, norm),
             ).fetchone()
 
             if existing is not None:
+                if duplicate_mode == "skip":
+                    skipped += 1
+                    continue
+                next_first_vol = min(int(existing["first_seen_vol"]), first_vol)
                 conn.execute(
                     """
                     UPDATE glossary_terms
@@ -663,7 +1046,8 @@ def import_glossary_tabular(
                         han_viet = CASE WHEN ? != '' THEN ? ELSE han_viet END,
                         english_meaning = CASE WHEN ? != '' THEN ? ELSE english_meaning END,
                         term_type = CASE WHEN ? != '' THEN ? ELSE term_type END,
-                        status = ?
+                        status = ?,
+                        first_seen_vol = ?
                     WHERE id = ?
                     """,
                     (
@@ -675,9 +1059,10 @@ def import_glossary_tabular(
                         han_viet,
                         english_meaning,
                         english_meaning,
-                        _cell(row, "term_type"),
+                        raw_type,
                         term_type,
                         row_status,
+                        next_first_vol,
                         int(existing["id"]),
                     ),
                 )
@@ -717,14 +1102,28 @@ def export_glossary_tabular(
     fmt: str = "tsv",
     volume_id: int | None = None,
     status_filter: str | None = None,
+    term_type: str | None = None,
+    min_freq: int | None = None,
+    max_freq: int | None = None,
+    missing_vi: bool = False,
+    missing_han_viet: bool = False,
+    first_seen_vol: int | None = None,
+    search: str | None = None,
     db_path: Path | str | None = None,
 ) -> tuple[str, str]:
-    """Export glossary terms to UTF-8-BOM TSV or CSV string. Returns (content, media_type)."""
+    """Export all matching glossary terms (uncapped) to UTF-8-BOM TSV or CSV string."""
     data = list_glossary_terms(
         series_id,
         volume_id=volume_id,
         status_filter=status_filter,
-        limit=5000,
+        term_type=term_type,
+        min_freq=min_freq,
+        max_freq=max_freq,
+        missing_vi=missing_vi,
+        missing_han_viet=missing_han_viet,
+        first_seen_vol=first_seen_vol,
+        search=search,
+        limit=0,
         db_path=db_path,
     )
     delimiter = "\t" if fmt.lower() == "tsv" else ","
@@ -769,6 +1168,31 @@ def export_glossary_tabular(
     return buf.getvalue(), media_type
 
 
+def build_glossary_term_xml_attrs(source_lang: str, row: Any) -> dict[str, str]:
+    """Canonical <TERM .../> attributes shared by Glossary XML & Continuity Pack XML.
+
+    Matches sample_continuity_pack.xml for Japanese (`jp`, `vn`, `romaji`, `type`)
+    and uses (`source`, `vn`, `reading`, `type`, optional `han_viet`) for ZH/KO.
+    """
+    if source_lang == "ja":
+        return {
+            "jp": str(row["source_term"]),
+            "vn": str(row["vi_term"]),
+            "romaji": str(row["reading"] or ""),
+            "type": str(row["term_type"] or "Concept"),
+        }
+    attrs: dict[str, str] = {
+        "source": str(row["source_term"]),
+        "vn": str(row["vi_term"]),
+        "reading": str(row["reading"] or ""),
+        "type": str(row["term_type"] or "Concept"),
+    }
+    han_viet_val = str(row["han_viet"] or "").strip()
+    if han_viet_val:
+        attrs["han_viet"] = han_viet_val
+    return attrs
+
+
 def render_glossary_xml(
     series_id: int,
     *,
@@ -794,13 +1218,14 @@ def render_glossary_xml(
                 f"""
                 SELECT g.source_term, g.vi_term, g.reading, g.han_viet, g.term_type
                 FROM glossary_terms g
-                JOIN volume_glossary_freq vgf ON vgf.term_id = g.id
-                WHERE g.series_id = ? AND vgf.volume_id = ?
+                INNER JOIN volume_glossary_freq vgf
+                    ON vgf.term_id = g.id AND vgf.volume_id = ?
+                WHERE g.series_id = ? AND vgf.freq > 0
                   AND g.status IN ({placeholders})
                   AND TRIM(g.vi_term) != ''
                 ORDER BY vgf.freq DESC, g.id ASC
                 """,
-                [series_id, volume_id, *valid_statuses],
+                [volume_id, series_id, *valid_statuses],
             ).fetchall()
         else:
             rows = conn.execute(
@@ -817,16 +1242,7 @@ def render_glossary_xml(
 
     root = ET.Element("GLOSSARY", {"lang": src_lang})
     for r in rows:
-        attrs = {
-            "source": str(r["source_term"]),
-            "vn": str(r["vi_term"]),
-            "type": str(r["term_type"] or "Concept"),
-        }
-        if (r["reading"] or "").strip():
-            attrs["reading"] = str(r["reading"])
-        if (r["han_viet"] or "").strip():
-            attrs["han_viet"] = str(r["han_viet"])
-        ET.SubElement(root, "TERM", attrs)
+        ET.SubElement(root, "TERM", build_glossary_term_xml_attrs(src_lang, r))
 
     ET.indent(root, space="  ")
     return ET.tostring(root, encoding="unicode")

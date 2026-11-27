@@ -91,6 +91,7 @@ def retranslate_chapter_selection(
             source_side=payload.source_side,
             instruction=payload.instruction,
             temperature=payload.temperature,
+            model_override=payload.model_override,
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

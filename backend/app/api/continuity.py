@@ -105,6 +105,7 @@ def trigger_map_phase(
             volume_id,
             force_rerun=req.force_rerun,
             chapter_ids=req.chapter_ids,
+            model_override=req.model_override,
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -126,7 +127,11 @@ def trigger_reduce_phase(
 ) -> ReducePhaseResponse:
     req = payload or ReducePhaseRequest()
     try:
-        res = run_reduce_and_merge(volume_id, skip_ai_summary=req.skip_ai_summary)
+        res = run_reduce_and_merge(
+            volume_id,
+            skip_ai_summary=req.skip_ai_summary,
+            model_override=req.model_override,
+        )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except ValueError as exc:

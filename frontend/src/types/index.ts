@@ -15,6 +15,7 @@ export type NavSection =
   | 'translate'
   | 'proofread'
   | 'settings'
+  | 'guide'
 
 export interface HybridConfig {
   use_glossary: boolean
@@ -338,11 +339,47 @@ export interface GlossaryTerm {
   volume_freq: number | null
 }
 
+export type GlossarySortBy =
+  | 'source_term'
+  | 'vi_term'
+  | 'freq'
+  | 'first_seen_vol'
+  | 'term_type'
+  | 'status'
+export type SortDir = 'asc' | 'desc'
+export type GlossaryDuplicateMode = 'skip' | 'upsert'
+
+export function formatFirstSeenVol(volNum: number): string {
+  return volNum <= 0 ? 'Gốc' : `Tập ${volNum}`
+}
+
+export interface GlossaryFilterCriteria {
+  volume_id?: number | null
+  status?: GlossaryStatus | null
+  term_type?: string | null
+  min_freq?: number | null
+  max_freq?: number | null
+  missing_vi?: boolean
+  missing_han_viet?: boolean
+  first_seen_vol?: number | null
+  search?: string | null
+}
+
+export interface GlossaryBulkSelectionPayload {
+  series_id?: number | null
+  term_ids?: number[]
+  apply_to_filter?: boolean
+  filter?: GlossaryFilterCriteria | null
+  exclude_ids?: number[]
+}
+
 export interface GlossaryListResponse {
   items: GlossaryTerm[]
+  total_count: number
   total_filtered: number
   total_in_scope: number
   status_counts: Record<GlossaryStatus, number>
+  distinct_first_seen_vols: number[]
 }
 
 export interface GlossaryExtractResponse {
@@ -620,12 +657,22 @@ export interface DebugContextResponse {
   ignored_shared_parts: string[]
 }
 
+export type MaskSourceLang = 'all' | 'ja' | 'zh' | 'ko'
+
 export interface SensitiveMaskItem {
   id: number
   series_id: number | null
+  source_lang: string
   raw_phrase: string
   safe_replacement: string
   created_at: string
+}
+
+export interface SensitiveMaskBulkImportResponse {
+  imported: number
+  updated: number
+  skipped: number
+  invalid_lines: string[]
 }
 
 export interface SensitiveSuggestion {
@@ -705,4 +752,78 @@ export interface RetranslateSelectionResponse {
   original_selection: string
   retranslated_text: string
   used_slot: string
+}
+
+// ---------- Batch C: Task Models & LN-VN Reference Packs ----------
+
+export type TaskModelKey =
+  | 'glossary_translate'
+  | 'continuity_map'
+  | 'continuity_reduce'
+  | 'translate_main'
+  | 'sensitive_scan'
+  | 'proofread_retranslate'
+
+export interface TaskModelAssignment {
+  primary: string
+  fallbacks: string[]
+}
+
+export interface TaskModelsResponse {
+  tasks: Record<TaskModelKey, TaskModelAssignment>
+  available_models: string[]
+}
+
+export const TASK_MODEL_META: Array<{
+  key: TaskModelKey
+  label: string
+  desc: string
+}> = [
+  {
+    key: 'translate_main',
+    label: 'Dịch chương chính',
+    desc: 'Tác vụ trọng tâm cần văn phong tốt (gợi ý Pro → Flash)',
+  },
+  {
+    key: 'glossary_translate',
+    label: 'Dịch thuật ngữ (Glossary)',
+    desc: 'Dịch batch 300–400 từ JSON có đối soát (gợi ý Flash)',
+  },
+  {
+    key: 'continuity_map',
+    label: 'Tóm tắt từng chương (MAP)',
+    desc: 'Chạy qua từng chương để trích xuất xưng hô (gợi ý Flash-Lite)',
+  },
+  {
+    key: 'continuity_reduce',
+    label: 'Tổng hợp Tập (REDUCE)',
+    desc: '1 request/tập tổng hợp RTAS & Sub-Arc (gợi ý Flash → Pro)',
+  },
+  {
+    key: 'sensitive_scan',
+    label: 'Quét từ nhạy cảm (Scan)',
+    desc: 'Tìm cụm từ kích hoạt safety filter (gợi ý Flash-Lite)',
+  },
+  {
+    key: 'proofread_retranslate',
+    label: 'Dịch lại đoạn bôi đen',
+    desc: 'Trau chuốt đoạn nhỏ trong Hiệu đính (gợi ý Flash → Pro)',
+  },
+]
+
+export interface ReferenceFileItem {
+  id: number
+  pack_name: string
+  filename: string
+  size_bytes: number
+  estimated_tokens: number
+  use_in_summary: boolean
+  use_in_translate: boolean
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ReferenceFileDetail extends ReferenceFileItem {
+  content: string
 }
