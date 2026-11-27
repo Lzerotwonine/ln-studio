@@ -2,6 +2,7 @@ import axios from 'axios'
 import type {
   ApiKeyItem,
   ApplyMasksResponse,
+  ChapterDetail,
   ChapterProofreadData,
   ChapterSummary,
   CharacterAppearance,
@@ -249,6 +250,75 @@ export async function fetchVolumeChapters(
   const { data } = await http.get<ChapterSummary[]>(
     `/api/volumes/${volumeId}/chapters`,
   )
+  return data
+}
+
+export async function fetchChapterDetail(
+  chapterId: number,
+): Promise<ChapterDetail> {
+  const { data } = await http.get<ChapterDetail>(`/api/chapters/${chapterId}`)
+  return data
+}
+
+export async function createManualChapter(
+  volumeId: number,
+  payload: {
+    title?: string
+    raw_text: string
+    insert_after_index?: number | null
+  },
+): Promise<ChapterSummary> {
+  const { data } = await http.post<ChapterSummary>(
+    `/api/volumes/${volumeId}/chapters`,
+    payload,
+  )
+  return data
+}
+
+export async function updateChapter(
+  chapterId: number,
+  payload: { title?: string; raw_text?: string },
+): Promise<ChapterSummary> {
+  const { data } = await http.patch<ChapterSummary>(
+    `/api/chapters/${chapterId}`,
+    payload,
+  )
+  return data
+}
+
+export async function deleteSingleChapter(
+  chapterId: number,
+): Promise<{ deleted_chapter_id: number; remaining_chapters: number }> {
+  const { data } = await http.delete<{
+    deleted_chapter_id: number
+    remaining_chapters: number
+  }>(`/api/chapters/${chapterId}`)
+  return data
+}
+
+export async function mergeChapterNext(chapterId: number): Promise<{
+  merged_chapter_id: number
+  deleted_chapter_id: number
+  chapter_index: number
+  title: string
+  raw_chars: number
+  total_chapters: number
+}> {
+  const { data } = await http.post(`/api/chapters/${chapterId}/merge-next`)
+  return data
+}
+
+export async function splitChapterAtOffset(
+  chapterId: number,
+  payload: { split_offset: number; second_title?: string },
+): Promise<{
+  first_chapter_id: number
+  second_chapter_id: number
+  first_chapter_index: number
+  second_chapter_index: number
+  total_chapters: number
+}> {
+  const { data } = await http.post(`/api/chapters/${chapterId}/split`, payload)
   return data
 }
 

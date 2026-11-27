@@ -1,4 +1,4 @@
-"""Multi-mode Translation Engine (Strategy Pattern: LN-VN, Freeform/Aiko, Hybrid), Quality Guard + <FICTION_CONTEXT> Retry, and Background SSE Job Manager."""
+"""Multi-mode Translation Engine (Strategy Pattern: LN-VN, Freeform, Hybrid), Quality Guard + <FICTION_CONTEXT> Retry, and Background SSE Job Manager."""
 
 from __future__ import annotations
 

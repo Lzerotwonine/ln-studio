@@ -8,15 +8,18 @@ import {
   GitMerge,
   Lock,
   MessageSquareQuote,
+  MoreHorizontal,
   Play,
   Plus,
   RefreshCw,
+  RotateCcw,
   Trash2,
   Unlock,
   Users,
   X,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ActionMenu } from '../components/ActionMenu'
 import {
   approveRelationship,
   createCharacter,
@@ -27,9 +30,7 @@ import {
   fetchContinuityStatus,
   fetchContinuityXml,
   fetchRelationships,
-  fetchSeriesList,
   fetchVolumeCharacters,
-  fetchVolumes,
   getContinuityXmlDownloadUrl,
   runMapPhaseApi,
   runReducePhaseApi,
@@ -48,14 +49,12 @@ import type {
 import {
   CHARACTER_ARCHETYPES,
   COMMON_PRONOUN_PAIRS,
-  LANG_META,
+  formatVolumeLabel,
 } from '../types'
 
 interface ContinuityTabProps {
   selectedSeries: Series | null
   selectedVolume: Volume | null
-  onSelectSeries: (series: Series | null) => void
-  onSelectVolume: (volume: Volume | null) => void
   onBackToDashboard: () => void
 }
 
@@ -65,19 +64,16 @@ type ReviewFilter = 'needs_review' | 'missing_reverse' | 'locked' | 'all'
 export function ContinuityTab({
   selectedSeries,
   selectedVolume,
-  onSelectSeries,
-  onSelectVolume,
   onBackToDashboard,
 }: ContinuityTabProps) {
   const [subTab, setSubTab] = useState<ContinuitySubTab>('review')
-  const [seriesList, setSeriesList] = useState<Series[]>([])
-  const [volumes, setVolumes] = useState<Volume[]>([])
 
   const [statusInfo, setStatusInfo] = useState<ContinuityStatus | null>(null)
   const [characters, setCharacters] = useState<CharacterWithState[]>([])
   const [relationships, setRelationships] = useState<RelationshipItem[]>([])
   const [xmlContent, setXmlContent] = useState('')
   const [loading, setLoading] = useState(false)
+  const loadSeqRef = useRef(0)
 
   // Pipeline buttons
   const [runningMap, setRunningMap] = useState(false)
@@ -121,56 +117,30 @@ export function ContinuityTab({
     }, 4500)
   }
 
-  // Load series list
-  useEffect(() => {
-    fetchSeriesList()
-      .then((list) => {
-        setSeriesList(list)
-        if (!selectedSeries && list.length > 0) {
-          onSelectSeries(list[0])
-        }
-      })
-      .catch(() => {})
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Load volumes for selected series
-  useEffect(() => {
-    if (!selectedSeries) {
-      setVolumes([])
-      return
-    }
-    fetchVolumes(selectedSeries.id)
-      .then((vList) => {
-        setVolumes(vList)
-        if (
-          vList.length > 0 &&
-          (!selectedVolume || selectedVolume.series_id !== selectedSeries.id)
-        ) {
-          onSelectVolume(vList[0])
-        }
-      })
-      .catch(() => {})
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSeries?.id])
+  const seriesId = selectedSeries?.id ?? null
+  const volumeId = selectedVolume?.id ?? null
 
   const loadAll = useCallback(async () => {
-    if (!selectedSeries || !selectedVolume) {
+    const seq = ++loadSeqRef.current
+    if (!seriesId || !volumeId) {
       setStatusInfo(null)
       setCharacters([])
       setRelationships([])
       setXmlContent('')
+      setPairDrafts({})
+      setNoteDrafts({})
       return
     }
     setLoading(true)
     setErrorMsg(null)
     try {
       const [st, chars, rels, xml] = await Promise.all([
-        fetchContinuityStatus(selectedVolume.id),
-        fetchVolumeCharacters(selectedVolume.id),
-        fetchRelationships(selectedSeries.id),
-        fetchContinuityXml(selectedVolume.id),
+        fetchContinuityStatus(volumeId),
+        fetchVolumeCharacters(volumeId),
+        fetchRelationships(seriesId),
+        fetchContinuityXml(volumeId),
       ])
+      if (seq !== loadSeqRef.current) return
       setStatusInfo(st)
       setCharacters(chars)
       setRelationships(rels)
@@ -185,13 +155,23 @@ export function ContinuityTab({
       setPairDrafts(nextPairs)
       setNoteDrafts(nextNotes)
     } catch (err) {
+      if (seq !== loadSeqRef.current) return
       setErrorMsg(extractErrorMessage(err))
     } finally {
-      setLoading(false)
+      if (seq === loadSeqRef.current) {
+        setLoading(false)
+      }
     }
-  }, [selectedSeries, selectedVolume])
+  }, [seriesId, volumeId])
 
   useEffect(() => {
+    setStatusInfo(null)
+    setCharacters([])
+    setRelationships([])
+    setXmlContent('')
+    setPairDrafts({})
+    setNoteDrafts({})
+    setErrorMsg(null)
     void loadAll()
   }, [loadAll])
 
@@ -459,63 +439,20 @@ export function ContinuityTab({
   return (
     <div className="max-w-[1600px] mx-auto p-5 space-y-4">
       {/* Header & Pipeline Bar */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-1.5">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-zinc-100">
-              Nhân vật, Xưng hô & Continuity Pack
-            </h2>
-            <span
-              className={`px-2 py-0.5 text-xs font-semibold rounded-md border ${LANG_META[selectedSeries.source_lang].badgeClass}`}
-            >
-              {LANG_META[selectedSeries.source_lang].short}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-zinc-100">
+            Nhân vật & Xưng hô
+          </h2>
+          <span className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-zinc-800 text-xs font-medium text-slate-600 dark:text-zinc-300">
+            {formatVolumeLabel(selectedVolume)}
+          </span>
+          {statusInfo && (
+            <span className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 text-xs font-semibold">
+              MAP: {statusInfo.summarized_chapters}/{statusInfo.total_chapters}{' '}
+              chương
             </span>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <select
-              aria-label="Chọn bộ truyện"
-              value={selectedSeries.id}
-              onChange={(e) => {
-                const found = seriesList.find(
-                  (s) => s.id === Number(e.target.value),
-                )
-                if (found) onSelectSeries(found)
-              }}
-              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 font-medium"
-            >
-              {seriesList.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.title}
-                </option>
-              ))}
-            </select>
-
-            <select
-              aria-label="Chọn tập truyện"
-              value={selectedVolume.id}
-              onChange={(e) => {
-                const found = volumes.find(
-                  (v) => v.id === Number(e.target.value),
-                )
-                if (found) onSelectVolume(found)
-              }}
-              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900"
-            >
-              {volumes.map((v) => (
-                <option key={v.id} value={v.id}>
-                  Tập {v.volume_number}: {v.title}
-                </option>
-              ))}
-            </select>
-
-            {statusInfo && (
-              <span className="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 font-medium">
-                MAP: {statusInfo.summarized_chapters}/{statusInfo.total_chapters}{' '}
-                chương
-              </span>
-            )}
-          </div>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -541,14 +478,40 @@ export function ContinuityTab({
             {runningReduce ? 'Đang REDUCE & MERGE...' : 'Chạy REDUCE & MERGE'}
           </button>
 
-          <button
-            type="button"
-            onClick={() => void loadAll()}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-slate-50 dark:hover:bg-zinc-800 cursor-pointer"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            Làm mới
-          </button>
+          <ActionMenu
+            label="Tiện ích & XML"
+            icon={<MoreHorizontal className="w-3.5 h-3.5" />}
+            items={[
+              {
+                label: loading ? 'Đang làm mới...' : 'Làm mới dữ liệu',
+                icon: (
+                  <RefreshCw
+                    className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`}
+                  />
+                ),
+                onClick: () => void loadAll(),
+              },
+              {
+                label: 'Chạy lại MAP toàn bộ (bỏ cache)',
+                icon: <RotateCcw className="w-3.5 h-3.5 text-amber-500" />,
+                disabled:
+                  runningMap || (statusInfo?.total_chapters ?? 0) === 0,
+                onClick: () => void handleRunMap(true),
+              },
+              {
+                label: 'Sao chép Continuity XML',
+                icon: <Copy className="w-3.5 h-3.5 text-indigo-500" />,
+                disabled: !xmlContent,
+                dividerBefore: true,
+                onClick: () => void handleCopyXml(),
+              },
+              {
+                label: `Tải vol${selectedVolume.volume_number}_continuity_pack.xml`,
+                icon: <Download className="w-3.5 h-3.5 text-emerald-600" />,
+                href: getContinuityXmlDownloadUrl(selectedVolume.id),
+              },
+            ]}
+          />
         </div>
       </div>
 
@@ -641,8 +604,8 @@ export function ContinuityTab({
             <p className="text-xs text-slate-500 dark:text-zinc-400">
               Quản lý danh sách nhân vật toàn Series, trạng thái xuất hiện (
               <strong>ACTUAL / MENTIONED</strong>) và diễn biến{' '}
-              <strong>Sub-Arc</strong> riêng cho Tập{' '}
-              {selectedVolume.volume_number}.
+              <strong>Sub-Arc</strong> riêng cho{' '}
+              <strong>{formatVolumeLabel(selectedVolume)}</strong>.
             </p>
             <button
               type="button"

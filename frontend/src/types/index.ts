@@ -180,7 +180,7 @@ export const MODE_META: Record<
       'bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-500/15 dark:text-indigo-300 dark:border-indigo-500/30',
   },
   freeform: {
-    label: 'Freeform / Aiko',
+    label: 'Dịch Tự Do (Freeform)',
     desc: 'Dịch tự do linh hoạt theo System Prompt tùy chỉnh',
     badgeClass:
       'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30',
@@ -296,9 +296,30 @@ export interface ChapterSummary {
   chapter_index: number
   title: string
   char_count: number
+  raw_chars: number
+  translated_chars: number
+  has_mask: boolean
+  char_ratio: number
   preview: string
   status: string
   updated_at: string
+}
+
+export interface ChapterDetail {
+  id: number
+  volume_id: number
+  chapter_index: number
+  title: string
+  raw_text: string
+  translated_text: string
+  status: string
+  updated_at: string
+}
+
+export function formatVolumeLabel(vol: Volume): string {
+  const label = (vol.title || '').trim()
+  if (!label) return `Tập ${vol.volume_number}`
+  return label
 }
 
 export interface GlossaryTerm {

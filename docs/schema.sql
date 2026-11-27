@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS series (
     title TEXT NOT NULL,
     source_lang TEXT NOT NULL DEFAULT 'ja' CHECK (source_lang IN ('ja', 'zh', 'ko')),
     translation_mode TEXT NOT NULL DEFAULT 'ln_vn' CHECK (translation_mode IN ('ln_vn', 'freeform', 'hybrid')),
-    system_prompt TEXT DEFAULT '',          -- Dùng cho chế độ Freeform/Aiko hoặc Hybrid
+    system_prompt TEXT DEFAULT '',          -- Dùng cho chế độ Dịch Tự Do (Freeform) hoặc Hybrid
     master_prompt_file TEXT DEFAULT 'master_prompt_vn.xml',
     hybrid_config_json TEXT DEFAULT '{"use_glossary":true,"use_characters":true,"use_relationships":true,"use_subarc":false,"rolling_context_lines":5}',
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -139,7 +139,7 @@ CREATE TABLE IF NOT EXISTS quota_slots (
     last_error TEXT
 );
 
--- 9. Prompt Presets (cho chế độ Aiko/Freeform & đa ngôn ngữ)
+-- 9. Prompt Presets (cho chế độ Dịch Tự Do/Freeform & đa ngôn ngữ)
 CREATE TABLE IF NOT EXISTS prompt_presets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,

@@ -54,7 +54,7 @@ def _seed_translation_fixture(db_file: Path) -> dict[str, int]:
         s_id = conn.execute(
             """
             INSERT INTO series (title, source_lang, translation_mode, system_prompt, master_prompt_file)
-            VALUES ('Mushoku Test', 'ja', 'ln_vn', 'Aiko custom system prompt.', 'master_prompt_vn.xml')
+            VALUES ('Mushoku Test', 'ja', 'ln_vn', 'Freeform custom system prompt.', 'master_prompt_vn.xml')
             """
         ).lastrowid
         v_id = conn.execute(
@@ -125,7 +125,7 @@ def test_translation_strategies_ln_vn_freeform_and_hybrid(isolated_db: Path) -> 
         ),
         db_path=isolated_db,
     )
-    assert "Aiko custom system prompt." in dbg_free["system_instruction_preview"]
+    assert "Freeform custom system prompt." in dbg_free["system_instruction_preview"]
     assert "無詠唱 = vô niệm" in dbg_free["user_prompt"]
     assert "Dòng ba.\nDòng bốn." in dbg_free["user_prompt"]
     assert "Dòng một." not in dbg_free["rolling_context"]

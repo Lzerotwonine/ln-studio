@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import { ChapterManagerPanel } from '../components/ChapterManagerPanel'
 import { ImportVolumeModal } from '../components/ImportVolumeModal'
 import {
   createSeries,
@@ -19,8 +20,6 @@ import {
   deleteVolume,
   extractErrorMessage,
   fetchPresets,
-  fetchSeriesList,
-  fetchVolumes,
   updateSeries,
   updateVolume,
 } from '../lib/api'
@@ -34,13 +33,25 @@ import type {
   Volume,
   VolumeStatus,
 } from '../types'
-import { LANG_META, MODE_META, VOLUME_STATUS_META } from '../types'
+import {
+  formatVolumeLabel,
+  LANG_META,
+  MODE_META,
+  VOLUME_STATUS_META,
+} from '../types'
 
 interface DashboardPageProps {
+  seriesList: Series[]
+  volumes: Volume[]
   selectedSeries: Series | null
   selectedVolume: Volume | null
   onSelectSeries: (series: Series | null) => void
   onSelectVolume: (volume: Volume | null) => void
+  onRefreshSeries: (preferredSeriesId?: number | null) => Promise<void>
+  onRefreshVolumes: (
+    seriesId: number | null,
+    preferredVolumeId?: number | null,
+  ) => Promise<void>
 }
 
 const DEFAULT_HYBRID: HybridConfig = {
@@ -60,21 +71,29 @@ const EMPTY_SERIES_FORM: SeriesPayload = {
   hybrid_config: { ...DEFAULT_HYBRID },
 }
 
+const VOLUME_LABEL_SUGGESTIONS = [
+  'Quyển 1',
+  'Tập 1',
+  'Chương 1-200',
+  'Full Truyện',
+]
+
 export function DashboardPage({
+  seriesList,
+  volumes,
   selectedSeries,
   selectedVolume,
   onSelectSeries,
   onSelectVolume,
+  onRefreshSeries,
+  onRefreshVolumes,
 }: DashboardPageProps) {
-  const [seriesList, setSeriesList] = useState<Series[]>([])
-  const [volumes, setVolumes] = useState<Volume[]>([])
   const [presets, setPresets] = useState<PromptPreset[]>([])
-  const [loadingSeries, setLoadingSeries] = useState(true)
-  const [loadingVolumes, setLoadingVolumes] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [langFilter, setLangFilter] = useState<'all' | SourceLang>('all')
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [toastMsg, setToastMsg] = useState<string | null>(null)
+  const [chapterRefreshSignal, setChapterRefreshSignal] = useState(0)
 
   // Series modal state
   const [seriesModalOpen, setSeriesModalOpen] = useState(false)
@@ -97,74 +116,14 @@ export function DashboardPage({
     setToastMsg(msg)
     window.setTimeout(() => {
       setToastMsg((curr) => (curr === msg ? null : curr))
-    }, 3200)
-  }
-
-  const loadSeriesAndPresets = async () => {
-    setLoadingSeries(true)
-    setErrorMsg(null)
-    try {
-      const [sList, pList] = await Promise.all([
-        fetchSeriesList(),
-        fetchPresets(),
-      ])
-      setSeriesList(sList)
-      setPresets(pList)
-
-      if (sList.length > 0) {
-        const refreshed = selectedSeries
-          ? sList.find((item) => item.id === selectedSeries.id) ?? sList[0]
-          : sList[0]
-        onSelectSeries(refreshed)
-      } else {
-        onSelectSeries(null)
-        onSelectVolume(null)
-      }
-    } catch (err) {
-      setErrorMsg(extractErrorMessage(err))
-    } finally {
-      setLoadingSeries(false)
-    }
+    }, 3500)
   }
 
   useEffect(() => {
-    void loadSeriesAndPresets()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    fetchPresets()
+      .then(setPresets)
+      .catch(() => {})
   }, [])
-
-  useEffect(() => {
-    if (!selectedSeries) {
-      setVolumes([])
-      return
-    }
-    let cancelled = false
-    const loadVols = async () => {
-      setLoadingVolumes(true)
-      try {
-        const vList = await fetchVolumes(selectedSeries.id)
-        if (!cancelled) {
-          setVolumes(vList)
-          if (selectedVolume && selectedVolume.series_id === selectedSeries.id) {
-            const found = vList.find((v) => v.id === selectedVolume.id) ?? null
-            onSelectVolume(found)
-          } else if (vList.length > 0) {
-            onSelectVolume(vList[0])
-          } else {
-            onSelectVolume(null)
-          }
-        }
-      } catch (err) {
-        if (!cancelled) setErrorMsg(extractErrorMessage(err))
-      } finally {
-        if (!cancelled) setLoadingVolumes(false)
-      }
-    }
-    void loadVols()
-    return () => {
-      cancelled = true
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSeries?.id])
 
   const filteredSeries = useMemo(() => {
     const q = searchQuery.trim().toLowerCase()
@@ -206,16 +165,12 @@ export function DashboardPage({
       let saved: Series
       if (editingSeries) {
         saved = await updateSeries(editingSeries.id, seriesForm)
-        setSeriesList((prev) =>
-          prev.map((item) => (item.id === saved.id ? saved : item)),
-        )
         notify(`Đã cập nhật bộ truyện "${saved.title}".`)
       } else {
         saved = await createSeries(seriesForm)
-        setSeriesList((prev) => [saved, ...prev])
         notify(`Đã tạo bộ truyện "${saved.title}".`)
       }
-      onSelectSeries(saved)
+      await onRefreshSeries(saved.id)
       setSeriesModalOpen(false)
     } catch (err) {
       setErrorMsg(extractErrorMessage(err))
@@ -232,12 +187,7 @@ export function DashboardPage({
     setErrorMsg(null)
     try {
       await deleteSeries(series.id)
-      const remaining = seriesList.filter((item) => item.id !== series.id)
-      setSeriesList(remaining)
-      if (selectedSeries?.id === series.id) {
-        onSelectSeries(remaining[0] ?? null)
-        onSelectVolume(null)
-      }
+      await onRefreshSeries(null)
       notify(`Đã xóa bộ truyện "${series.title}".`)
     } catch (err) {
       setErrorMsg(extractErrorMessage(err))
@@ -252,7 +202,7 @@ export function DashboardPage({
         : 1
     setEditingVolume(null)
     setVolNumber(nextNum)
-    setVolTitle(`Tập ${nextNum}`)
+    setVolTitle('')
     setVolSummary('')
     setVolRtas(3.0)
     setVolStatus('imported')
@@ -271,7 +221,7 @@ export function DashboardPage({
 
   const handleSaveVolume = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!selectedSeries || !volTitle.trim()) return
+    if (!selectedSeries) return
     setSavingVolume(true)
     setErrorMsg(null)
     try {
@@ -279,38 +229,24 @@ export function DashboardPage({
       if (editingVolume) {
         saved = await updateVolume(editingVolume.id, {
           volume_number: volNumber,
-          title: volTitle,
+          title: volTitle.trim(),
           volume_summary: volSummary,
           rtas_baseline: volRtas,
           status: volStatus,
         })
-        setVolumes((prev) =>
-          prev
-            .map((v) => (v.id === saved.id ? saved : v))
-            .sort((a, b) => a.volume_number - b.volume_number),
-        )
-        notify(`Đã cập nhật Tập ${saved.volume_number}.`)
+        notify(`Đã cập nhật "${formatVolumeLabel(saved)}".`)
       } else {
         saved = await createVolume(selectedSeries.id, {
           volume_number: volNumber,
-          title: volTitle,
+          title: volTitle.trim(),
           volume_summary: volSummary,
           rtas_baseline: volRtas,
           status: volStatus,
         })
-        setVolumes((prev) =>
-          [...prev, saved].sort((a, b) => a.volume_number - b.volume_number),
-        )
-        setSeriesList((prev) =>
-          prev.map((s) =>
-            s.id === selectedSeries.id
-              ? { ...s, volume_count: s.volume_count + 1 }
-              : s,
-          ),
-        )
-        notify(`Đã tạo Tập ${saved.volume_number}: ${saved.title}.`)
+        notify(`Đã tạo "${formatVolumeLabel(saved)}".`)
       }
-      onSelectVolume(saved)
+      await onRefreshSeries(selectedSeries.id)
+      await onRefreshVolumes(selectedSeries.id, saved.id)
       setVolumeModalOpen(false)
     } catch (err) {
       setErrorMsg(extractErrorMessage(err))
@@ -321,27 +257,17 @@ export function DashboardPage({
 
   const handleDeleteVolume = async (volume: Volume) => {
     const confirmed = window.confirm(
-      `Xóa Tập ${volume.volume_number}: "${volume.title}"?`,
+      `Xóa "${formatVolumeLabel(volume)}" và toàn bộ chương bên trong?`,
     )
     if (!confirmed) return
     setErrorMsg(null)
     try {
       await deleteVolume(volume.id)
-      const remaining = volumes.filter((v) => v.id !== volume.id)
-      setVolumes(remaining)
       if (selectedSeries) {
-        setSeriesList((prev) =>
-          prev.map((s) =>
-            s.id === selectedSeries.id
-              ? { ...s, volume_count: Math.max(0, s.volume_count - 1) }
-              : s,
-          ),
-        )
+        await onRefreshSeries(selectedSeries.id)
+        await onRefreshVolumes(selectedSeries.id, null)
       }
-      if (selectedVolume?.id === volume.id) {
-        onSelectVolume(remaining[0] ?? null)
-      }
-      notify(`Đã xóa Tập ${volume.volume_number}.`)
+      notify(`Đã xóa "${formatVolumeLabel(volume)}".`)
     } catch (err) {
       setErrorMsg(extractErrorMessage(err))
     }
@@ -363,11 +289,11 @@ export function DashboardPage({
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-zinc-100">
-            Quản lý Truyện
+            Quản lý Truyện & Kho Chương
           </h2>
           <p className="text-sm text-slate-500 dark:text-zinc-400 mt-0.5">
-            Tạo và tổ chức các bộ truyện đa ngôn ngữ (JA / ZH / KO), chọn chế độ
-            dịch và quản lý từng tập.
+            Tổ chức các bộ truyện đa ngôn ngữ (JA / ZH / KO), tạo Tập/Quyển nhãn
+            tự do và quản lý Kho Chương chi tiết.
           </p>
         </div>
 
@@ -404,14 +330,12 @@ export function DashboardPage({
       {/* Main Split Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left: Series List */}
-        <section className="lg:col-span-5 rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden shadow-xs">
+        <section className="lg:col-span-4 rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden shadow-xs">
           <div className="p-4 border-b border-slate-200 dark:border-zinc-800 space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-slate-900 dark:text-zinc-100 flex items-center gap-2">
-                <BookOpen className="w-4 h-4 text-indigo-500" />
-                Danh sách Bộ truyện ({filteredSeries.length})
-              </h3>
-            </div>
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-zinc-100 flex items-center gap-2">
+              <BookOpen className="w-4 h-4 text-indigo-500" />
+              Danh sách Bộ truyện ({filteredSeries.length})
+            </h3>
 
             <div className="flex gap-2">
               <div className="relative flex-1">
@@ -420,8 +344,8 @@ export function DashboardPage({
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Tìm theo tên truyện..."
-                  className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950 text-slate-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                  placeholder="Tìm tên truyện..."
+                  className="w-full pl-9 pr-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950 text-slate-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
                 />
               </div>
               <select
@@ -430,7 +354,7 @@ export function DashboardPage({
                   setLangFilter(e.target.value as 'all' | SourceLang)
                 }
                 aria-label="Lọc ngôn ngữ"
-                className="px-2.5 py-2 text-sm rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950 text-slate-700 dark:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                className="px-2.5 py-2 text-xs rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950 text-slate-700 dark:text-zinc-200"
               >
                 <option value="all">Tất cả</option>
                 <option value="ja">JA</option>
@@ -440,17 +364,13 @@ export function DashboardPage({
             </div>
           </div>
 
-          <div className="divide-y divide-slate-100 dark:divide-zinc-800 max-h-[600px] overflow-y-auto">
-            {loadingSeries ? (
-              <div className="p-8 text-center text-sm text-slate-400">
-                Đang tải danh sách bộ truyện...
-              </div>
-            ) : filteredSeries.length === 0 ? (
+          <div className="divide-y divide-slate-100 dark:divide-zinc-800 max-h-[640px] overflow-y-auto">
+            {filteredSeries.length === 0 ? (
               <div className="p-10 text-center space-y-3">
                 <div className="w-11 h-11 mx-auto rounded-xl bg-slate-100 dark:bg-zinc-800 flex items-center justify-center text-slate-400">
                   <BookOpen className="w-5 h-5" />
                 </div>
-                <p className="text-sm text-slate-500 dark:text-zinc-400">
+                <p className="text-xs text-slate-500 dark:text-zinc-400">
                   Chưa có bộ truyện nào. Bấm "Tạo bộ truyện mới" để bắt đầu.
                 </p>
               </div>
@@ -461,7 +381,7 @@ export function DashboardPage({
                   <div
                     key={series.id}
                     onClick={() => onSelectSeries(series)}
-                    className={`p-4 cursor-pointer transition-colors ${
+                    className={`p-3.5 cursor-pointer transition-colors ${
                       isSelected
                         ? 'bg-indigo-50/70 dark:bg-indigo-500/10 border-l-3 border-l-indigo-600'
                         : 'hover:bg-slate-50 dark:hover:bg-zinc-800/50 border-l-3 border-l-transparent'
@@ -472,24 +392,24 @@ export function DashboardPage({
                         <h4 className="font-semibold text-sm text-slate-900 dark:text-zinc-100 truncate">
                           {series.title}
                         </h4>
-                        <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                           <span
-                            className={`inline-flex items-center px-2 py-0.5 text-[11px] font-semibold rounded-md border ${LANG_META[series.source_lang].badgeClass}`}
+                            className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold rounded border ${LANG_META[series.source_lang].badgeClass}`}
                           >
                             {LANG_META[series.source_lang].short}
                           </span>
                           <span
-                            className={`inline-flex items-center px-2 py-0.5 text-[11px] font-medium rounded-md border ${MODE_META[series.translation_mode].badgeClass}`}
+                            className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded border ${MODE_META[series.translation_mode].badgeClass}`}
                           >
                             {MODE_META[series.translation_mode].label}
                           </span>
-                          <span className="text-xs text-slate-500 dark:text-zinc-400 ml-1">
+                          <span className="text-[11px] text-slate-500 dark:text-zinc-400">
                             {series.volume_count} tập
                           </span>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1 shrink-0">
+                      <div className="flex items-center gap-0.5 shrink-0">
                         <button
                           type="button"
                           title="Chỉnh sửa bộ truyện"
@@ -497,9 +417,9 @@ export function DashboardPage({
                             e.stopPropagation()
                             openEditSeriesModal(series)
                           }}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-white dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-white dark:hover:bg-zinc-800 cursor-pointer"
                         >
-                          <Edit3 className="w-4 h-4" />
+                          <Edit3 className="w-3.5 h-3.5" />
                         </button>
                         <button
                           type="button"
@@ -508,9 +428,9 @@ export function DashboardPage({
                             e.stopPropagation()
                             void handleDeleteSeries(series)
                           }}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-white dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-white dark:hover:bg-zinc-800 cursor-pointer"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
@@ -521,12 +441,12 @@ export function DashboardPage({
           </div>
         </section>
 
-        {/* Right: Selected Series Details & Volumes */}
-        <section className="lg:col-span-7 space-y-5">
+        {/* Right: Selected Series Details + Volumes + Chapter Manager */}
+        <section className="lg:col-span-8 space-y-5">
           {selectedSeries ? (
             <>
               {/* Series Summary Card */}
-              <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 shadow-xs space-y-4">
+              <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 shadow-xs space-y-3">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -556,57 +476,14 @@ export function DashboardPage({
                   </button>
                 </div>
 
-                {selectedSeries.translation_mode === 'hybrid' && (
-                  <div className="flex flex-wrap gap-2 text-xs">
-                    {[
-                      {
-                        label: 'Glossary',
-                        on: selectedSeries.hybrid_config.use_glossary,
-                      },
-                      {
-                        label: 'Nhân vật',
-                        on: selectedSeries.hybrid_config.use_characters,
-                      },
-                      {
-                        label: 'Quan hệ/Xưng hô',
-                        on: selectedSeries.hybrid_config.use_relationships,
-                      },
-                      {
-                        label: 'Sub-Arc',
-                        on: selectedSeries.hybrid_config.use_subarc,
-                      },
-                    ].map((flag) => (
-                      <span
-                        key={flag.label}
-                        className={`px-2.5 py-1 rounded-full font-medium ${
-                          flag.on
-                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
-                            : 'bg-slate-100 text-slate-400 dark:bg-zinc-800 dark:text-zinc-500 line-through'
-                        }`}
-                      >
-                        {flag.label}
-                      </span>
-                    ))}
-                    <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 dark:bg-zinc-800 dark:text-zinc-300">
-                      Rolling context:{' '}
-                      {selectedSeries.hybrid_config.rolling_context_lines} dòng
-                    </span>
-                  </div>
-                )}
-
                 {selectedSeries.system_prompt ? (
-                  <div className="rounded-xl bg-slate-50 dark:bg-zinc-950/70 border border-slate-200 dark:border-zinc-800 p-3.5">
-                    <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-zinc-500 mb-1">
-                      System Prompt
-                    </div>
-                    <p className="text-xs text-slate-700 dark:text-zinc-300 whitespace-pre-wrap line-clamp-4 leading-relaxed">
-                      {selectedSeries.system_prompt}
-                    </p>
-                  </div>
+                  <p className="text-xs text-slate-600 dark:text-zinc-400 bg-slate-50 dark:bg-zinc-950/60 border border-slate-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 line-clamp-2 whitespace-pre-wrap">
+                    {selectedSeries.system_prompt}
+                  </p>
                 ) : (
                   <div className="text-xs text-slate-500 dark:text-zinc-400">
                     Master Prompt XML:{' '}
-                    <code className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300">
+                    <code className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-zinc-800">
                       {selectedSeries.master_prompt_file}
                     </code>
                   </div>
@@ -615,10 +492,10 @@ export function DashboardPage({
 
               {/* Volumes Section */}
               <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden shadow-xs">
-                <div className="p-4 border-b border-slate-200 dark:border-zinc-800 flex items-center justify-between gap-3">
+                <div className="px-4 py-3.5 border-b border-slate-200 dark:border-zinc-800 flex items-center justify-between gap-3">
                   <h4 className="text-sm font-semibold text-slate-900 dark:text-zinc-100 flex items-center gap-2">
                     <Layers className="w-4 h-4 text-indigo-500" />
-                    Danh sách Tập ({volumes.length})
+                    Danh sách Tập / Quyển ({volumes.length})
                   </h4>
                   <button
                     type="button"
@@ -626,25 +503,21 @@ export function DashboardPage({
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white transition-colors cursor-pointer"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    Thêm tập mới
+                    Thêm tập / quyển
                   </button>
                 </div>
 
-                {loadingVolumes ? (
-                  <div className="p-8 text-center text-sm text-slate-400">
-                    Đang tải danh sách tập...
-                  </div>
-                ) : volumes.length === 0 ? (
-                  <div className="p-10 text-center space-y-2">
-                    <p className="text-sm text-slate-500 dark:text-zinc-400">
-                      Bộ truyện này chưa có tập nào.
+                {volumes.length === 0 ? (
+                  <div className="p-8 text-center space-y-2">
+                    <p className="text-xs text-slate-500 dark:text-zinc-400">
+                      Bộ truyện này chưa có tập/quyển nào.
                     </p>
                     <button
                       type="button"
                       onClick={openCreateVolumeModal}
-                      className="inline-flex items-center gap-1.5 text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
                     >
-                      <Plus className="w-4 h-4" /> Tạo Tập 1 ngay
+                      <Plus className="w-3.5 h-3.5" /> Tạo Tập / Quyển đầu tiên
                     </button>
                   </div>
                 ) : (
@@ -656,19 +529,19 @@ export function DashboardPage({
                         <div
                           key={vol.id}
                           onClick={() => onSelectVolume(vol)}
-                          className={`p-4 flex items-start justify-between gap-4 cursor-pointer transition-colors ${
+                          className={`px-4 py-3 flex items-center justify-between gap-3 cursor-pointer transition-colors ${
                             activeVol
-                              ? 'bg-indigo-50/60 dark:bg-indigo-500/10'
-                              : 'hover:bg-slate-50 dark:hover:bg-zinc-800/40'
+                              ? 'bg-indigo-50/60 dark:bg-indigo-500/10 border-l-3 border-l-indigo-600'
+                              : 'hover:bg-slate-50 dark:hover:bg-zinc-800/40 border-l-3 border-l-transparent'
                           }`}
                         >
-                          <div className="min-w-0 space-y-1">
+                          <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-md text-xs font-bold bg-slate-900 text-white dark:bg-zinc-100 dark:text-zinc-900">
-                                Vol {vol.volume_number}
+                              <span className="inline-flex items-center justify-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-900 text-white dark:bg-zinc-100 dark:text-zinc-900">
+                                #{vol.volume_number}
                               </span>
                               <span className="font-semibold text-sm text-slate-900 dark:text-zinc-100 truncate">
-                                {vol.title}
+                                {formatVolumeLabel(vol)}
                               </span>
                               <span
                                 className={`inline-flex items-center px-2 py-0.5 text-[11px] font-medium rounded-full ${statusMeta.badgeClass}`}
@@ -677,14 +550,10 @@ export function DashboardPage({
                               </span>
                             </div>
                             {vol.volume_summary && (
-                              <p className="text-xs text-slate-500 dark:text-zinc-400 line-clamp-2">
+                              <p className="text-xs text-slate-500 dark:text-zinc-400 line-clamp-1 mt-0.5">
                                 {vol.volume_summary}
                               </p>
                             )}
-                            <div className="text-[11px] text-slate-400 dark:text-zinc-500">
-                              RTAS nền: {vol.rtas_baseline.toFixed(1)} · Trung
-                              bình: {vol.rtas_current_avg.toFixed(1)}
-                            </div>
                           </div>
 
                           <div className="flex items-center gap-1 shrink-0">
@@ -710,7 +579,7 @@ export function DashboardPage({
                               }}
                               className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-white dark:hover:bg-zinc-800 cursor-pointer"
                             >
-                              <Edit3 className="w-4 h-4" />
+                              <Edit3 className="w-3.5 h-3.5" />
                             </button>
                             <button
                               type="button"
@@ -721,7 +590,7 @@ export function DashboardPage({
                               }}
                               className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-white dark:hover:bg-zinc-800 cursor-pointer"
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         </div>
@@ -730,6 +599,17 @@ export function DashboardPage({
                   </div>
                 )}
               </div>
+
+              {/* Chapter Manager Panel for Selected Volume */}
+              {selectedVolume && (
+                <ChapterManagerPanel
+                  volume={selectedVolume}
+                  refreshSignal={chapterRefreshSignal}
+                  onOpenImportModal={() => setImportingVolume(selectedVolume)}
+                  onNotify={notify}
+                  onError={setErrorMsg}
+                />
+              )}
             </>
           ) : (
             <div className="rounded-2xl border border-dashed border-slate-300 dark:border-zinc-700 p-12 text-center space-y-3 bg-white/60 dark:bg-zinc-900/40">
@@ -741,8 +621,7 @@ export function DashboardPage({
               </h3>
               <p className="text-sm text-slate-500 dark:text-zinc-400 max-w-md mx-auto">
                 Tạo một bộ truyện với ngôn ngữ gốc (Nhật, Trung hoặc Hàn) và chế
-                độ dịch phù hợp, sau đó thêm các tập để chuẩn bị cho quy trình
-                dịch.
+                độ dịch phù hợp, sau đó thêm Tập / Quyển để bắt đầu.
               </p>
               <button
                 type="button"
@@ -790,7 +669,6 @@ export function DashboardPage({
                 />
               </div>
 
-              {/* Language selector */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-zinc-200 mb-1.5">
                   Ngôn ngữ gốc
@@ -818,7 +696,6 @@ export function DashboardPage({
                 </div>
               </div>
 
-              {/* Mode selector */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-zinc-200 mb-1.5">
                   Chế độ dịch
@@ -856,7 +733,6 @@ export function DashboardPage({
                 </div>
               </div>
 
-              {/* Hybrid Config */}
               {seriesForm.translation_mode === 'hybrid' && (
                 <div className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-950/60 p-4 space-y-3">
                   <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
@@ -920,7 +796,6 @@ export function DashboardPage({
                 </div>
               )}
 
-              {/* Quick apply Prompt Preset */}
               {presets.length > 0 && (
                 <div>
                   <div className="flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-zinc-400 mb-1.5">
@@ -942,7 +817,6 @@ export function DashboardPage({
                 </div>
               )}
 
-              {/* System Prompt */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-zinc-200 mb-1.5">
                   System Prompt / Hướng dẫn văn phong
@@ -956,7 +830,7 @@ export function DashboardPage({
                       system_prompt: e.target.value,
                     })
                   }
-                  placeholder="Nhập hướng dẫn dịch cho chế độ Freeform/Hybrid hoặc ghi chú bổ sung cho LN-VN..."
+                  placeholder="Nhập hướng dẫn dịch cho chế độ Dịch Tự Do (Freeform) / Hybrid hoặc ghi chú bổ sung..."
                   className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950 text-slate-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
                 />
               </div>
@@ -986,15 +860,15 @@ export function DashboardPage({
         </div>
       )}
 
-      {/* Create/Edit Volume Modal */}
+      {/* Create/Edit Volume Modal (Flexible freeform label) */}
       {volumeModalOpen && selectedSeries && (
         <div className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-xl">
             <div className="px-6 py-4 border-b border-slate-200 dark:border-zinc-800 flex items-center justify-between">
               <h3 className="text-lg font-bold text-slate-900 dark:text-zinc-100">
                 {editingVolume
-                  ? `Chỉnh sửa Tập ${editingVolume.volume_number}`
-                  : `Thêm tập mới — ${selectedSeries.title}`}
+                  ? `Chỉnh sửa ${formatVolumeLabel(editingVolume)}`
+                  : `Thêm Tập / Quyển — ${selectedSeries.title}`}
               </h3>
               <button
                 type="button"
@@ -1008,8 +882,8 @@ export function DashboardPage({
             <form onSubmit={handleSaveVolume} className="p-6 space-y-4">
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-zinc-200 mb-1">
-                    Số tập *
+                  <label className="block text-xs font-medium text-slate-700 dark:text-zinc-200 mb-1">
+                    Thứ tự #
                   </label>
                   <input
                     type="number"
@@ -1023,23 +897,36 @@ export function DashboardPage({
                   />
                 </div>
                 <div className="col-span-2">
-                  <label className="block text-sm font-medium text-slate-700 dark:text-zinc-200 mb-1">
-                    Tiêu đề tập *
+                  <label className="block text-xs font-medium text-slate-700 dark:text-zinc-200 mb-1">
+                    Nhãn hiển thị (tùy chọn — để trống tự đặt "Tập {volNumber}")
                   </label>
                   <input
                     type="text"
-                    required
                     value={volTitle}
                     onChange={(e) => setVolTitle(e.target.value)}
-                    placeholder="VD: Tập 1 — Khởi đầu mới"
+                    placeholder={`VD: Quyển ${volNumber}, Chương 1-200, Full Truyện...`}
                     className="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950"
                   />
                 </div>
               </div>
 
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                <span className="text-slate-400">Gợi ý nhanh:</span>
+                {VOLUME_LABEL_SUGGESTIONS.map((label) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => setVolTitle(label)}
+                    className="px-2 py-0.5 rounded-md border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-800 hover:border-indigo-400 cursor-pointer"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-zinc-200 mb-1">
+                  <label className="block text-xs font-medium text-slate-700 dark:text-zinc-200 mb-1">
                     RTAS nền (1.0 – 5.0)
                   </label>
                   <input
@@ -1053,7 +940,7 @@ export function DashboardPage({
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-zinc-200 mb-1">
+                  <label className="block text-xs font-medium text-slate-700 dark:text-zinc-200 mb-1">
                     Trạng thái
                   </label>
                   <select
@@ -1063,26 +950,26 @@ export function DashboardPage({
                     }
                     className="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950"
                   >
-                    {(
-                      Object.keys(VOLUME_STATUS_META) as VolumeStatus[]
-                    ).map((st) => (
-                      <option key={st} value={st}>
-                        {VOLUME_STATUS_META[st].label}
-                      </option>
-                    ))}
+                    {(Object.keys(VOLUME_STATUS_META) as VolumeStatus[]).map(
+                      (st) => (
+                        <option key={st} value={st}>
+                          {VOLUME_STATUS_META[st].label}
+                        </option>
+                      ),
+                    )}
                   </select>
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-zinc-200 mb-1">
+                <label className="block text-xs font-medium text-slate-700 dark:text-zinc-200 mb-1">
                   Tóm tắt tập (tùy chọn)
                 </label>
                 <textarea
                   rows={3}
                   value={volSummary}
                   onChange={(e) => setVolSummary(e.target.value)}
-                  placeholder="Ghi chú bối cảnh chính hoặc mạch truyện của tập..."
+                  placeholder="Ghi chú bối cảnh chính hoặc mạch truyện..."
                   className="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950"
                 />
               </div>
@@ -1104,13 +991,14 @@ export function DashboardPage({
                     ? 'Đang lưu...'
                     : editingVolume
                       ? 'Lưu thay đổi'
-                      : 'Tạo tập'}
+                      : 'Tạo tập / quyển'}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
       {/* Import Volume Book Modal */}
       {importingVolume && selectedSeries && (
         <ImportVolumeModal
@@ -1118,8 +1006,9 @@ export function DashboardPage({
           seriesTitle={selectedSeries.title}
           onClose={() => setImportingVolume(null)}
           onImported={(res) => {
+            setChapterRefreshSignal((n) => n + 1)
             notify(
-              `Đã nhập ${res.chapters_imported} chương (${res.total_chars.toLocaleString('vi-VN')} ký tự) vào Tập ${importingVolume.volume_number}.`,
+              `Đã nhập ${res.chapters_imported} chương (${res.total_chars.toLocaleString('vi-VN')} ký tự) vào ${formatVolumeLabel(importingVolume)}.`,
             )
           }}
         />

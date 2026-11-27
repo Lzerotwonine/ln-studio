@@ -40,11 +40,11 @@ DEFAULT_PROMPT_PRESETS: list[dict[str, str]] = [
         ),
     },
     {
-        "name": "Aiko-style Nhật tự do",
+        "name": "Nhật Tự Do (Freeform)",
         "source_lang": "ja",
         "mode": "freeform",
         "content": (
-            "Bạn là Aiko — dịch giả Light Novel/Web Novel tiếng Nhật phong cách mượt mà, giàu cảm xúc và tự nhiên như người Việt viết.\n"
+            "Bạn là dịch giả Light Novel / Web Novel tiếng Nhật phong cách mượt mà, giàu cảm xúc và tự nhiên như người Việt viết.\n"
             "- Ưu tiên văn phong sống động, uyển chuyển, thoát ý khỏi cấu trúc ngữ pháp Nhật nhưng vẫn truyền tải trọn vẹn sắc thái và tình tiết gốc.\n"
             "- Chọn đại từ nhân xưng linh hoạt theo ngữ cảnh cảm xúc, độ thân mật và vai vế giữa các nhân vật.\n"
             "- Xử lý khéo léo từ tượng thanh/tượng hình, chơi chữ và sắc thái hài hước/lãng mạn để người đọc Việt cảm nhận trọn vẹn."
@@ -193,6 +193,25 @@ def init_db(db_path: Path | str | None = None) -> Path:
             set_setting(conn, "model_priority", DEFAULT_MODELS)
         if get_setting(conn, "model_limits") is None:
             set_setting(conn, "model_limits", DEFAULT_MODEL_LIMITS)
+
+        # Migrate legacy preset naming cleanly if an existing DB has the old default name
+        freeform_default = DEFAULT_PROMPT_PRESETS[1]
+        legacy_row = conn.execute(
+            "SELECT id FROM prompt_presets WHERE name LIKE '%-style Nhật tự do' AND name != ?",
+            (freeform_default["name"],),
+        ).fetchone()
+        if legacy_row is not None:
+            exists_new = conn.execute(
+                "SELECT id FROM prompt_presets WHERE name = ?",
+                (freeform_default["name"],),
+            ).fetchone()
+            if exists_new is not None:
+                conn.execute("DELETE FROM prompt_presets WHERE id = ?", (legacy_row["id"],))
+            else:
+                conn.execute(
+                    "UPDATE prompt_presets SET name = ?, content = ? WHERE id = ?",
+                    (freeform_default["name"], freeform_default["content"], legacy_row["id"]),
+                )
 
         # Seed 4 default prompt presets
         seed_default_presets(conn)

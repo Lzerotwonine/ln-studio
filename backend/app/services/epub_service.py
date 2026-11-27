@@ -648,7 +648,7 @@ def import_book_to_volume(
 def list_volume_chapters(
     volume_id: int, db_path: Path | str | None = None
 ) -> list[dict[str, Any]]:
-    """List chapters belonging to a volume with character counts and preview."""
+    """List chapters belonging to a volume with raw/translated character counts and preview."""
     with db_session(db_path) as conn:
         vol = conn.execute("SELECT id FROM volumes WHERE id = ?", (volume_id,)).fetchone()
         if vol is None:
@@ -657,6 +657,10 @@ def list_volume_chapters(
             """
             SELECT id, volume_id, chapter_index, title,
                    LENGTH(raw_text) AS char_count,
+                   LENGTH(raw_text) AS raw_chars,
+                   LENGTH(translated_text) AS translated_chars,
+                   CASE WHEN masked_raw_text IS NOT NULL AND TRIM(masked_raw_text) != '' THEN 1 ELSE 0 END AS has_mask,
+                   COALESCE(char_ratio, 0.0) AS char_ratio,
                    SUBSTR(raw_text, 1, 180) AS preview,
                    status, updated_at
             FROM chapters
@@ -665,4 +669,311 @@ def list_volume_chapters(
             """,
             (volume_id,),
         ).fetchall()
-    return [dict(r) for r in rows]
+    result = []
+    for r in rows:
+        item = dict(r)
+        item["has_mask"] = bool(item["has_mask"])
+        item["char_ratio"] = float(item["char_ratio"] or 0.0)
+        result.append(item)
+    return result
+
+
+def _reindex_volume_chapters(conn: sqlite3.Connection, volume_id: int) -> int:
+    """Safely renumber chapters 1..N without hitting UNIQUE(volume_id, chapter_index)."""
+    rows = conn.execute(
+        "SELECT id FROM chapters WHERE volume_id = ? ORDER BY chapter_index ASC, id ASC",
+        (volume_id,),
+    ).fetchall()
+    # Two-pass temporary negative indices prevent UNIQUE constraint collisions
+    for offset, row in enumerate(rows, start=1):
+        conn.execute(
+            "UPDATE chapters SET chapter_index = ? WHERE id = ?",
+            (-offset, int(row["id"])),
+        )
+    for idx, row in enumerate(rows, start=1):
+        conn.execute(
+            "UPDATE chapters SET chapter_index = ? WHERE id = ?",
+            (idx, int(row["id"])),
+        )
+    return len(rows)
+
+
+def create_manual_chapter(
+    volume_id: int,
+    *,
+    title: str = "",
+    raw_text: str,
+    insert_after_index: int | None = None,
+    db_path: Path | str | None = None,
+) -> dict[str, Any]:
+    """Create a chapter by pasting raw text directly into a volume."""
+    cleaned_raw = raw_text.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not cleaned_raw:
+        raise ValueError("Nội dung văn bản gốc không được để trống.")
+
+    with db_session(db_path) as conn:
+        vol = conn.execute("SELECT id FROM volumes WHERE id = ?", (volume_id,)).fetchone()
+        if vol is None:
+            raise LookupError("Không tìm thấy tập truyện.")
+
+        existing = conn.execute(
+            "SELECT id, chapter_index FROM chapters WHERE volume_id = ? ORDER BY chapter_index ASC",
+            (volume_id,),
+        ).fetchall()
+        total = len(existing)
+
+        if insert_after_index is None or insert_after_index >= total:
+            target_idx = total + 1
+        else:
+            target_idx = max(1, insert_after_index + 1)
+            # Shift chapters >= target_idx up by 1 using temporary negative offsets
+            to_shift = [r for r in existing if int(r["chapter_index"]) >= target_idx]
+            for r in to_shift:
+                conn.execute(
+                    "UPDATE chapters SET chapter_index = ? WHERE id = ?",
+                    (-(int(r["chapter_index"]) + 1), int(r["id"])),
+                )
+            for r in to_shift:
+                conn.execute(
+                    "UPDATE chapters SET chapter_index = ? WHERE id = ?",
+                    (int(r["chapter_index"]) + 1, int(r["id"])),
+                )
+
+        effective_title = title.strip() or f"Chương {target_idx}"
+        cur = conn.execute(
+            """
+            INSERT INTO chapters (volume_id, chapter_index, title, raw_text, status)
+            VALUES (?, ?, ?, ?, 'pending')
+            """,
+            (volume_id, target_idx, effective_title, cleaned_raw),
+        )
+        new_id = int(cur.lastrowid)
+        row = conn.execute(
+            """
+            SELECT id, volume_id, chapter_index, title,
+                   LENGTH(raw_text) AS char_count,
+                   LENGTH(raw_text) AS raw_chars,
+                   LENGTH(translated_text) AS translated_chars,
+                   0 AS has_mask,
+                   COALESCE(char_ratio, 0.0) AS char_ratio,
+                   SUBSTR(raw_text, 1, 180) AS preview,
+                   status, updated_at
+            FROM chapters WHERE id = ?
+            """,
+            (new_id,),
+        ).fetchone()
+    item = dict(row)
+    item["has_mask"] = False
+    item["char_ratio"] = float(item["char_ratio"] or 0.0)
+    return item
+
+
+def update_chapter_metadata(
+    chapter_id: int,
+    *,
+    title: str | None = None,
+    raw_text: str | None = None,
+    db_path: Path | str | None = None,
+) -> dict[str, Any]:
+    """Rename a chapter or edit its raw text."""
+    updates: list[str] = []
+    params: list[Any] = []
+    if title is not None:
+        updates.append("title = ?")
+        params.append(title.strip())
+    if raw_text is not None:
+        cleaned = raw_text.replace("\r\n", "\n").replace("\r", "\n").strip()
+        if not cleaned:
+            raise ValueError("Nội dung văn bản gốc không được để trống.")
+        updates.append("raw_text = ?")
+        params.append(cleaned)
+
+    with db_session(db_path) as conn:
+        existing = conn.execute(
+            "SELECT id, chapter_index FROM chapters WHERE id = ?", (chapter_id,)
+        ).fetchone()
+        if existing is None:
+            raise LookupError("Không tìm thấy chương.")
+        if updates:
+            updates.append("updated_at = CURRENT_TIMESTAMP")
+            params.append(chapter_id)
+            conn.execute(f"UPDATE chapters SET {', '.join(updates)} WHERE id = ?", params)
+
+        row = conn.execute(
+            """
+            SELECT id, volume_id, chapter_index, title,
+                   LENGTH(raw_text) AS char_count,
+                   LENGTH(raw_text) AS raw_chars,
+                   LENGTH(translated_text) AS translated_chars,
+                   CASE WHEN masked_raw_text IS NOT NULL AND TRIM(masked_raw_text) != '' THEN 1 ELSE 0 END AS has_mask,
+                   COALESCE(char_ratio, 0.0) AS char_ratio,
+                   SUBSTR(raw_text, 1, 180) AS preview,
+                   status, updated_at
+            FROM chapters WHERE id = ?
+            """,
+            (chapter_id,),
+        ).fetchone()
+    item = dict(row)
+    item["has_mask"] = bool(item["has_mask"])
+    item["char_ratio"] = float(item["char_ratio"] or 0.0)
+    return item
+
+
+def delete_single_chapter(
+    chapter_id: int, db_path: Path | str | None = None
+) -> dict[str, int]:
+    """Delete a single chapter and re-index remaining chapters 1..N."""
+    with db_session(db_path) as conn:
+        row = conn.execute(
+            "SELECT id, volume_id FROM chapters WHERE id = ?", (chapter_id,)
+        ).fetchone()
+        if row is None:
+            raise LookupError("Không tìm thấy chương.")
+        volume_id = int(row["volume_id"])
+        conn.execute("DELETE FROM chapters WHERE id = ?", (chapter_id,))
+        remaining = _reindex_volume_chapters(conn, volume_id)
+    return {"deleted_chapter_id": chapter_id, "remaining_chapters": remaining}
+
+
+def merge_chapter_with_next(
+    chapter_id: int, db_path: Path | str | None = None
+) -> dict[str, Any]:
+    """Merge the given chapter with the immediately following chapter in the same volume."""
+    with db_session(db_path) as conn:
+        curr = conn.execute("SELECT * FROM chapters WHERE id = ?", (chapter_id,)).fetchone()
+        if curr is None:
+            raise LookupError("Không tìm thấy chương.")
+        volume_id = int(curr["volume_id"])
+        curr_idx = int(curr["chapter_index"])
+
+        nxt = conn.execute(
+            """
+            SELECT * FROM chapters
+            WHERE volume_id = ? AND chapter_index > ?
+            ORDER BY chapter_index ASC
+            LIMIT 1
+            """,
+            (volume_id, curr_idx),
+        ).fetchone()
+        if nxt is None:
+            raise ValueError("Đây là chương cuối cùng, không có chương kế tiếp để gộp.")
+
+        merged_raw = f"{str(curr['raw_text']).rstrip()}\n\n{str(nxt['raw_text']).lstrip()}"
+        curr_tr = str(curr["translated_text"] or "").strip()
+        nxt_tr = str(nxt["translated_text"] or "").strip()
+        merged_tr = "\n\n".join(p for p in (curr_tr, nxt_tr) if p)
+
+        curr_mask = str(curr["masked_raw_text"] or "").strip()
+        nxt_mask = str(nxt["masked_raw_text"] or "").strip()
+        merged_mask: str | None = None
+        if curr_mask or nxt_mask:
+            merged_mask = f"{curr_mask or str(curr['raw_text']).rstrip()}\n\n{nxt_mask or str(nxt['raw_text']).lstrip()}"
+
+        new_ratio = round(len(merged_tr) / max(1, len(merged_raw)), 4) if merged_tr else 0.0
+        new_status = "completed" if (curr["status"] == "completed" and nxt["status"] == "completed") else "pending"
+
+        conn.execute(
+            """
+            UPDATE chapters
+            SET raw_text = ?,
+                translated_text = ?,
+                masked_raw_text = ?,
+                summary_json = NULL,
+                char_ratio = ?,
+                status = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (merged_raw, merged_tr, merged_mask, new_ratio, new_status, chapter_id),
+        )
+        nxt_id = int(nxt["id"])
+        conn.execute("DELETE FROM chapters WHERE id = ?", (nxt_id,))
+        total = _reindex_volume_chapters(conn, volume_id)
+        refreshed = conn.execute(
+            "SELECT chapter_index, title FROM chapters WHERE id = ?", (chapter_id,)
+        ).fetchone()
+
+    return {
+        "merged_chapter_id": chapter_id,
+        "deleted_chapter_id": nxt_id,
+        "chapter_index": int(refreshed["chapter_index"]),
+        "title": str(refreshed["title"] or ""),
+        "raw_chars": len(merged_raw),
+        "total_chapters": total,
+    }
+
+
+def split_chapter_at_offset(
+    chapter_id: int,
+    split_offset: int,
+    *,
+    second_title: str = "",
+    db_path: Path | str | None = None,
+) -> dict[str, Any]:
+    """Split a chapter's raw_text at `split_offset` into two consecutive chapters."""
+    with db_session(db_path) as conn:
+        curr = conn.execute("SELECT * FROM chapters WHERE id = ?", (chapter_id,)).fetchone()
+        if curr is None:
+            raise LookupError("Không tìm thấy chương.")
+
+        raw_text = str(curr["raw_text"] or "")
+        if split_offset <= 0 or split_offset >= len(raw_text):
+            raise ValueError("Vị trí tách con trỏ phải nằm giữa phần đầu và phần cuối văn bản.")
+
+        part1 = raw_text[:split_offset].strip()
+        part2 = raw_text[split_offset:].strip()
+        if not part1 or not part2:
+            raise ValueError("Cả 2 phần sau khi tách đều phải có nội dung văn bản.")
+
+        volume_id = int(curr["volume_id"])
+        curr_idx = int(curr["chapter_index"])
+        orig_title = str(curr["title"] or f"Chương {curr_idx}")
+        part2_title = second_title.strip() or f"{orig_title} (Phần 2)"
+
+        # Shift all chapters after curr_idx up by 1 safely via negative temporary indices
+        later_rows = conn.execute(
+            "SELECT id, chapter_index FROM chapters WHERE volume_id = ? AND chapter_index > ? ORDER BY chapter_index DESC",
+            (volume_id, curr_idx),
+        ).fetchall()
+        for r in later_rows:
+            conn.execute(
+                "UPDATE chapters SET chapter_index = ? WHERE id = ?",
+                (-(int(r["chapter_index"]) + 1), int(r["id"])),
+            )
+        for r in later_rows:
+            conn.execute(
+                "UPDATE chapters SET chapter_index = ? WHERE id = ?",
+                (int(r["chapter_index"]) + 1, int(r["id"])),
+            )
+
+        # Update original chapter with part 1
+        conn.execute(
+            """
+            UPDATE chapters
+            SET raw_text = ?,
+                masked_raw_text = NULL,
+                summary_json = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (part1, chapter_id),
+        )
+
+        # Insert part 2 immediately after at curr_idx + 1
+        cur = conn.execute(
+            """
+            INSERT INTO chapters (volume_id, chapter_index, title, raw_text, status)
+            VALUES (?, ?, ?, ?, 'pending')
+            """,
+            (volume_id, curr_idx + 1, part2_title, part2),
+        )
+        second_id = int(cur.lastrowid)
+        total = _reindex_volume_chapters(conn, volume_id)
+
+    return {
+        "first_chapter_id": chapter_id,
+        "second_chapter_id": second_id,
+        "first_chapter_index": curr_idx,
+        "second_chapter_index": curr_idx + 1,
+        "total_chapters": total,
+    }

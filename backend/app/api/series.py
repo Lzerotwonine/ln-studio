@@ -206,6 +206,7 @@ def create_volume(series_id: int, payload: VolumeCreate) -> VolumeResponse:
         series_row = conn.execute("SELECT id FROM series WHERE id = ?", (series_id,)).fetchone()
         if series_row is None:
             raise HTTPException(status_code=404, detail="Không tìm thấy bộ truyện.")
+        effective_title = payload.title.strip() or f"Tập {payload.volume_number}"
         try:
             cur = conn.execute(
                 """
@@ -218,7 +219,7 @@ def create_volume(series_id: int, payload: VolumeCreate) -> VolumeResponse:
                 (
                     series_id,
                     payload.volume_number,
-                    payload.title,
+                    effective_title,
                     payload.volume_summary,
                     payload.rtas_baseline,
                     payload.rtas_baseline,
@@ -263,9 +264,16 @@ def update_volume(volume_id: int, payload: VolumeUpdate) -> VolumeResponse:
             params.append(val)
 
     with db_session() as conn:
-        existing = conn.execute("SELECT id FROM volumes WHERE id = ?", (volume_id,)).fetchone()
+        existing = conn.execute("SELECT id, volume_number FROM volumes WHERE id = ?", (volume_id,)).fetchone()
         if existing is None:
             raise HTTPException(status_code=404, detail="Không tìm thấy tập truyện.")
+        if payload.title is not None and not payload.title.strip():
+            # Fallback label if user clears title completely
+            target_num = payload.volume_number if payload.volume_number is not None else int(existing["volume_number"])
+            for i, col in enumerate(updates):
+                if col == "title = ?":
+                    params[i] = f"Tập {target_num}"
+                    break
         if updates:
             params.append(volume_id)
             try:

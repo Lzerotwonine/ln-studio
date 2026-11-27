@@ -4,6 +4,7 @@ import {
   CheckCheck,
   Download,
   FileSpreadsheet,
+  MoreHorizontal,
   Plus,
   ScanSearch,
   Search,
@@ -13,6 +14,7 @@ import {
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { ActionMenu } from '../components/ActionMenu'
 import { ImportVolumeModal } from '../components/ImportVolumeModal'
 import {
   bulkDeleteGlossaryTerms,
@@ -22,8 +24,6 @@ import {
   extractErrorMessage,
   extractVolumeGlossary,
   fetchGlossary,
-  fetchSeriesList,
-  fetchVolumes,
   getGlossaryExportUrl,
   importGlossaryFile,
   translateNewGlossaryTerms,
@@ -35,13 +35,11 @@ import type {
   Series,
   Volume,
 } from '../types'
-import { GLOSSARY_STATUS_META, LANG_META, TERM_TYPES } from '../types'
+import { formatVolumeLabel, GLOSSARY_STATUS_META, TERM_TYPES } from '../types'
 
 interface GlossaryTabProps {
   selectedSeries: Series | null
   selectedVolume: Volume | null
-  onSelectSeries: (series: Series | null) => void
-  onSelectVolume: (volume: Volume | null) => void
   onBackToDashboard: () => void
 }
 
@@ -50,13 +48,8 @@ type ScopeMode = 'volume' | 'series'
 export function GlossaryTab({
   selectedSeries,
   selectedVolume,
-  onSelectSeries,
-  onSelectVolume,
   onBackToDashboard,
 }: GlossaryTabProps) {
-  const [seriesList, setSeriesList] = useState<Series[]>([])
-  const [volumes, setVolumes] = useState<Volume[]>([])
-
   // Filters
   const [scope, setScope] = useState<ScopeMode>(
     selectedVolume ? 'volume' : 'series',
@@ -114,39 +107,6 @@ export function GlossaryTab({
       setToastMsg((curr) => (curr === msg ? null : curr))
     }, 4500)
   }
-
-  // Load series list for quick switching
-  useEffect(() => {
-    fetchSeriesList()
-      .then((list) => {
-        setSeriesList(list)
-        if (!selectedSeries && list.length > 0) {
-          onSelectSeries(list[0])
-        }
-      })
-      .catch(() => {})
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Load volumes when series changes
-  useEffect(() => {
-    if (!selectedSeries) {
-      setVolumes([])
-      return
-    }
-    fetchVolumes(selectedSeries.id)
-      .then((vList) => {
-        setVolumes(vList)
-        if (
-          vList.length > 0 &&
-          (!selectedVolume || selectedVolume.series_id !== selectedSeries.id)
-        ) {
-          onSelectVolume(vList[0])
-        }
-      })
-      .catch(() => {})
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSeries?.id])
 
   // Debounce instant search
   useEffect(() => {
@@ -445,76 +405,20 @@ export function GlossaryTab({
 
   return (
     <div className="max-w-[1600px] mx-auto p-5 space-y-4">
-      {/* Header + Series/Volume selector + Primary actions */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-1.5">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-zinc-100">
-              Master Glossary
-            </h2>
-            <span
-              className={`px-2 py-0.5 text-xs font-semibold rounded-md border ${LANG_META[selectedSeries.source_lang].badgeClass}`}
-            >
-              {LANG_META[selectedSeries.source_lang].label}
-            </span>
-          </div>
-
-          {/* Quick context switchers */}
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <select
-              aria-label="Chọn bộ truyện"
-              value={selectedSeries.id}
-              onChange={(e) => {
-                const found = seriesList.find(
-                  (s) => s.id === Number(e.target.value),
-                )
-                if (found) onSelectSeries(found)
-              }}
-              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-800 dark:text-zinc-200 font-medium"
-            >
-              {seriesList.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.title}
-                </option>
-              ))}
-            </select>
-
-            <select
-              aria-label="Chọn tập truyện"
-              value={selectedVolume?.id ?? ''}
-              onChange={(e) => {
-                const found = volumes.find(
-                  (v) => v.id === Number(e.target.value),
-                )
-                onSelectVolume(found ?? null)
-              }}
-              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-800 dark:text-zinc-200"
-            >
-              {volumes.length === 0 ? (
-                <option value="">(Chưa có tập)</option>
-              ) : (
-                volumes.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    Tập {v.volume_number}: {v.title}
-                  </option>
-                ))
-              )}
-            </select>
-          </div>
+      {/* Header + 2 Primary Actions + Compact Dropdown */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-zinc-100">
+            Master Glossary
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
+            Quản lý thuật ngữ chuẩn hóa xuyên suốt bộ truyện và lọc theo từng
+            tập.
+          </p>
         </div>
 
-        {/* Action Buttons */}
+        {/* 2 Primary Actions + Secondary Dropdown */}
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            disabled={!selectedVolume}
-            onClick={() => setImportModalOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-slate-50 dark:hover:bg-zinc-800 disabled:opacity-45 cursor-pointer"
-          >
-            <Upload className="w-3.5 h-3.5 text-indigo-500" />
-            Nhập truyện
-          </button>
-
           <button
             type="button"
             disabled={!selectedVolume || extracting}
@@ -534,18 +438,53 @@ export function GlossaryTab({
             <Sparkles className="w-3.5 h-3.5" />
             {translating
               ? 'Đang dịch bằng Gemini...'
-              : `Dịch các từ mới (${statusCounts.new})`}
+              : `Dịch từ mới (${statusCounts.new})`}
           </button>
 
-          <button
-            type="button"
-            disabled={importingTsv}
-            onClick={() => tsvInputRef.current?.click()}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-slate-50 dark:hover:bg-zinc-800 cursor-pointer"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-            {importingTsv ? 'Đang nhập...' : 'Import TSV/CSV'}
-          </button>
+          <ActionMenu
+            label={importingTsv ? 'Đang nhập...' : 'Nhập / Xuất'}
+            icon={<MoreHorizontal className="w-3.5 h-3.5" />}
+            items={[
+              {
+                label: 'Thêm thuật ngữ thủ công',
+                icon: <Plus className="w-3.5 h-3.5 text-indigo-500" />,
+                onClick: () => setAddModalOpen(true),
+              },
+              {
+                label: 'Nhập tệp truyện (.epub/.txt/.docx)',
+                icon: <Upload className="w-3.5 h-3.5 text-indigo-500" />,
+                disabled: !selectedVolume,
+                onClick: () => setImportModalOpen(true),
+              },
+              {
+                label: 'Import TSV / CSV từ Excel',
+                icon: <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />,
+                disabled: importingTsv,
+                dividerBefore: true,
+                onClick: () => tsvInputRef.current?.click(),
+              },
+              {
+                label: 'Export TSV (Excel)',
+                icon: <Download className="w-3.5 h-3.5" />,
+                href: getGlossaryExportUrl(
+                  selectedSeries.id,
+                  'tsv',
+                  effectiveExportVol,
+                  effectiveExportStatus,
+                ),
+              },
+              {
+                label: 'Export CSV',
+                icon: <Download className="w-3.5 h-3.5" />,
+                href: getGlossaryExportUrl(
+                  selectedSeries.id,
+                  'csv',
+                  effectiveExportVol,
+                  effectiveExportStatus,
+                ),
+              },
+            ]}
+          />
           <input
             ref={tsvInputRef}
             type="file"
@@ -553,41 +492,6 @@ export function GlossaryTab({
             className="hidden"
             onChange={(e) => void handleImportTsv(e)}
           />
-
-          <a
-            href={getGlossaryExportUrl(
-              selectedSeries.id,
-              'tsv',
-              effectiveExportVol,
-              effectiveExportStatus,
-            )}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-slate-50 dark:hover:bg-zinc-800"
-          >
-            <Download className="w-3.5 h-3.5" />
-            TSV
-          </a>
-
-          <a
-            href={getGlossaryExportUrl(
-              selectedSeries.id,
-              'csv',
-              effectiveExportVol,
-              effectiveExportStatus,
-            )}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-slate-50 dark:hover:bg-zinc-800"
-          >
-            <Download className="w-3.5 h-3.5" />
-            CSV
-          </a>
-
-          <button
-            type="button"
-            onClick={() => setAddModalOpen(true)}
-            className="inline-flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-medium border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-slate-50 dark:hover:bg-zinc-800 cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Thêm từ
-          </button>
         </div>
       </div>
 
@@ -627,7 +531,7 @@ export function GlossaryTab({
               }`}
             >
               {selectedVolume
-                ? `Tập ${selectedVolume.volume_number}`
+                ? formatVolumeLabel(selectedVolume)
                 : 'Theo tập'}
             </button>
             <button

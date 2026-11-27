@@ -10,14 +10,11 @@ import {
   Wifi,
   WifiOff,
 } from 'lucide-react'
-import type { NavSection, Series, Volume } from '../types'
-import { LANG_META } from '../types'
+import type { NavSection } from '../types'
 
 interface SidebarProps {
   activeSection: NavSection
   onSelectSection: (section: NavSection) => void
-  selectedSeries: Series | null
-  selectedVolume: Volume | null
   isDark: boolean
   onToggleTheme: () => void
   backendOnline: boolean
@@ -27,7 +24,6 @@ const NAV_ITEMS: Array<{
   id: NavSection
   label: string
   icon: typeof BookOpen
-  phaseTag?: string
 }> = [
   { id: 'dashboard', label: 'Quản lý Truyện', icon: BookOpen },
   { id: 'glossary', label: 'Thuật ngữ', icon: BookMarked },
@@ -40,64 +36,30 @@ const NAV_ITEMS: Array<{
 export function Sidebar({
   activeSection,
   onSelectSection,
-  selectedSeries,
-  selectedVolume,
   isDark,
   onToggleTheme,
   backendOnline,
 }: SidebarProps) {
   return (
-    <aside className="w-64 shrink-0 border-r border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/95 flex flex-col justify-between select-none">
+    <aside className="w-60 shrink-0 border-r border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/95 flex flex-col justify-between select-none">
       <div>
         {/* Brand */}
-        <div className="h-16 px-5 flex items-center gap-3 border-b border-slate-200 dark:border-zinc-800">
-          <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-sm shadow-sm">
+        <div className="h-14 px-5 flex items-center gap-3 border-b border-slate-200 dark:border-zinc-800">
+          <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
             LN
           </div>
           <div className="min-w-0">
-            <h1 className="text-sm font-semibold text-slate-900 dark:text-zinc-100 leading-tight truncate">
+            <h1 className="text-sm font-bold text-slate-900 dark:text-zinc-100 leading-tight truncate">
               LN-Studio
             </h1>
-            <p className="text-xs text-slate-500 dark:text-zinc-400 truncate">
+            <p className="text-[11px] text-slate-500 dark:text-zinc-400 truncate">
               Light Novel Workbench
             </p>
           </div>
         </div>
 
-        {/* Active Context Card */}
-        <div className="px-3 pt-4 pb-2">
-          <div className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50 dark:bg-zinc-950/60 p-3">
-            <div className="text-[11px] font-medium uppercase tracking-wider text-slate-400 dark:text-zinc-500 mb-1">
-              Ngữ cảnh làm việc
-            </div>
-            {selectedSeries ? (
-              <div className="space-y-1">
-                <div className="flex items-center gap-1.5">
-                  <span
-                    className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold rounded border ${LANG_META[selectedSeries.source_lang].badgeClass}`}
-                  >
-                    {LANG_META[selectedSeries.source_lang].short}
-                  </span>
-                  <span className="text-xs font-semibold text-slate-800 dark:text-zinc-100 truncate">
-                    {selectedSeries.title}
-                  </span>
-                </div>
-                <div className="text-xs text-slate-500 dark:text-zinc-400 truncate">
-                  {selectedVolume
-                    ? `Tập ${selectedVolume.volume_number}: ${selectedVolume.title}`
-                    : 'Chưa chọn tập cụ thể'}
-                </div>
-              </div>
-            ) : (
-              <p className="text-xs text-slate-500 dark:text-zinc-400">
-                Chọn hoặc tạo bộ truyện ở Dashboard
-              </p>
-            )}
-          </div>
-        </div>
-
         {/* Navigation */}
-        <nav className="px-3 py-2 space-y-1" aria-label="Điều hướng chính">
+        <nav className="px-3 py-4 space-y-1" aria-label="Điều hướng chính">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon
             const active = activeSection === item.id
@@ -106,27 +68,20 @@ export function Sidebar({
                 key={item.id}
                 type="button"
                 onClick={() => onSelectSection(item.id)}
-                className={`w-full flex items-center justify-between gap-2.5 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors cursor-pointer ${
                   active
                     ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300'
                     : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-zinc-800/80 dark:hover:text-zinc-100'
                 }`}
               >
-                <span className="flex items-center gap-2.5 truncate">
-                  <Icon
-                    className={`w-4 h-4 shrink-0 ${
-                      active
-                        ? 'text-indigo-600 dark:text-indigo-400'
-                        : 'text-slate-400 dark:text-zinc-500'
-                    }`}
-                  />
-                  <span className="truncate">{item.label}</span>
-                </span>
-                {item.phaseTag && (
-                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 dark:bg-zinc-800 dark:text-zinc-500">
-                    {item.phaseTag}
-                  </span>
-                )}
+                <Icon
+                  className={`w-4 h-4 shrink-0 ${
+                    active
+                      ? 'text-indigo-600 dark:text-indigo-400'
+                      : 'text-slate-400 dark:text-zinc-500'
+                  }`}
+                />
+                <span className="truncate">{item.label}</span>
               </button>
             )
           })}

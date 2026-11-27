@@ -79,7 +79,7 @@ class SeriesResponse(SeriesBase):
 
 class VolumeCreate(BaseModel):
     volume_number: int = Field(..., ge=1)
-    title: str = Field(..., min_length=1, max_length=255)
+    title: str = Field(default="", max_length=255)
     volume_summary: str = ""
     rtas_baseline: float = Field(default=3.0, ge=1.0, le=5.0)
     status: VolumeStatus = "imported"
@@ -87,15 +87,12 @@ class VolumeCreate(BaseModel):
     @field_validator("title")
     @classmethod
     def strip_title(cls, v: str) -> str:
-        cleaned = v.strip()
-        if not cleaned:
-            raise ValueError("Tiêu đề tập không được để trống.")
-        return cleaned
+        return (v or "").strip()
 
 
 class VolumeUpdate(BaseModel):
     volume_number: int | None = Field(default=None, ge=1)
-    title: str | None = Field(default=None, min_length=1, max_length=255)
+    title: str | None = Field(default=None, max_length=255)
     volume_summary: str | None = None
     rtas_baseline: float | None = Field(default=None, ge=1.0, le=5.0)
     rtas_current_avg: float | None = Field(default=None, ge=1.0, le=5.0)
@@ -107,10 +104,7 @@ class VolumeUpdate(BaseModel):
     def strip_optional_title(cls, v: str | None) -> str | None:
         if v is None:
             return None
-        cleaned = v.strip()
-        if not cleaned:
-            raise ValueError("Tiêu đề tập không được để trống.")
-        return cleaned
+        return v.strip()
 
 
 class VolumeResponse(BaseModel):
@@ -297,9 +291,46 @@ class ChapterSummaryResponse(BaseModel):
     chapter_index: int
     title: str
     char_count: int
+    raw_chars: int = 0
+    translated_chars: int = 0
+    has_mask: bool = False
+    char_ratio: float = 0.0
     preview: str
     status: str
     updated_at: str
+
+
+class ChapterCreateRequest(BaseModel):
+    title: str = Field(default="", max_length=255)
+    raw_text: str = Field(..., min_length=1)
+    insert_after_index: int | None = Field(default=None, ge=0)
+
+
+class ChapterUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=255)
+    raw_text: str | None = None
+
+
+class ChapterSplitRequest(BaseModel):
+    split_offset: int = Field(..., ge=1)
+    second_title: str = Field(default="", max_length=255)
+
+
+class ChapterMergeResponse(BaseModel):
+    merged_chapter_id: int
+    deleted_chapter_id: int
+    chapter_index: int
+    title: str
+    raw_chars: int
+    total_chapters: int
+
+
+class ChapterSplitResponse(BaseModel):
+    first_chapter_id: int
+    second_chapter_id: int
+    first_chapter_index: int
+    second_chapter_index: int
+    total_chapters: int
 
 
 class ChapterDetailResponse(BaseModel):

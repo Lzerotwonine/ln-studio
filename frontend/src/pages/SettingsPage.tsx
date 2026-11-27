@@ -893,8 +893,8 @@ export function SettingsPage() {
                 Danh sách Prompt Presets ({presets.length})
               </h3>
               <p className="text-xs text-slate-500 dark:text-zinc-400">
-                Nạp sẵn 4 preset mặc định (LN-VN Nhật chuẩn, Aiko-style Nhật tự
-                do, Tiên hiệp/Huyền huyễn Trung, Hunter/Hệ thống Hàn).
+                Nạp sẵn 4 preset mặc định (LN-VN Nhật chuẩn, Nhật Tự Do
+                (Freeform), Tiên hiệp/Huyền huyễn Trung, Hunter/Hệ thống Hàn).
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -1033,7 +1033,7 @@ export function SettingsPage() {
                     className="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950"
                   >
                     <option value="ln_vn">LN-VN Chuẩn</option>
-                    <option value="freeform">Freeform / Aiko</option>
+                    <option value="freeform">Dịch Tự Do (Freeform)</option>
                     <option value="hybrid">Hybrid</option>
                   </select>
                 </div>

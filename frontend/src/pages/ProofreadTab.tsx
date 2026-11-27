@@ -5,18 +5,18 @@ import {
   ChevronRight,
   Download,
   FileText,
+  MoreHorizontal,
   Replace,
   Save,
   Sparkles,
   X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ActionMenu } from '../components/ActionMenu'
 import {
   extractErrorMessage,
   fetchChapterProofread,
-  fetchSeriesList,
   fetchVolumeChapters,
-  fetchVolumes,
   findReplaceVolume,
   getVolumeDocxExportUrl,
   getVolumeEpubExportUrl,
@@ -31,13 +31,11 @@ import type {
   Series,
   Volume,
 } from '../types'
-import { LANG_META } from '../types'
+import { formatVolumeLabel } from '../types'
 
 interface ProofreadTabProps {
   selectedSeries: Series | null
   selectedVolume: Volume | null
-  onSelectSeries: (series: Series | null) => void
-  onSelectVolume: (volume: Volume | null) => void
   onBackToDashboard: () => void
 }
 
@@ -91,27 +89,21 @@ function tokenizeRawWithGlossary(
 export function ProofreadTab({
   selectedSeries,
   selectedVolume,
-  onSelectSeries,
-  onSelectVolume,
   onBackToDashboard,
 }: ProofreadTabProps) {
-  const [seriesList, setSeriesList] = useState<Series[]>([])
-  const [volumes, setVolumes] = useState<Volume[]>([])
   const [chapters, setChapters] = useState<ChapterSummary[]>([])
   const [activeChapterId, setActiveChapterId] = useState<number | null>(null)
   const [chapterData, setChapterData] = useState<ChapterProofreadData | null>(
     null,
   )
   const [loadingChapter, setLoadingChapter] = useState(false)
+  const chapterLoadSeqRef = useRef(0)
 
   // Editor & Auto-save state
   const [draftText, setDraftText] = useState('')
   const [savedText, setSavedText] = useState('')
   const [saveState, setSaveState] = useState<SaveState>('saved')
   const [fontSize, setFontSize] = useState<number>(15)
-  const [docxFont, setDocxFont] = useState<'Times New Roman' | 'Cambria'>(
-    'Times New Roman',
-  )
 
   // Hover tooltip state for Raw glossary highlights
   const [hoveredTerm, setHoveredTerm] = useState<{
@@ -154,75 +146,60 @@ export function ProofreadTab({
     }, 4000)
   }
 
-  // Load series list
-  useEffect(() => {
-    fetchSeriesList()
-      .then((list) => {
-        setSeriesList(list)
-        if (!selectedSeries && list.length > 0) onSelectSeries(list[0])
-      })
-      .catch(() => {})
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  const volumeId = selectedVolume?.id ?? null
 
-  // Load volumes
+  // Reset all state & reload chapters cleanly whenever active volume changes
   useEffect(() => {
-    if (!selectedSeries) {
-      setVolumes([])
-      return
-    }
-    fetchVolumes(selectedSeries.id)
-      .then((vList) => {
-        setVolumes(vList)
-        if (
-          vList.length > 0 &&
-          (!selectedVolume || selectedVolume.series_id !== selectedSeries.id)
-        ) {
-          onSelectVolume(vList[0])
-        }
-      })
-      .catch(() => {})
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSeries?.id])
+    chapterLoadSeqRef.current += 1
+    setChapters([])
+    setActiveChapterId(null)
+    setChapterData(null)
+    setDraftText('')
+    setSavedText('')
+    setSaveState('saved')
+    setSelectionInfo(null)
+    setHoveredTerm(null)
+    setFrPreview(null)
+    setErrorMsg(null)
 
-  // Load chapters for volume
-  useEffect(() => {
-    if (!selectedVolume) {
-      setChapters([])
-      setActiveChapterId(null)
-      setChapterData(null)
-      return
-    }
-    fetchVolumeChapters(selectedVolume.id)
+    if (!volumeId) return
+
+    let cancelled = false
+    fetchVolumeChapters(volumeId)
       .then((list) => {
+        if (cancelled) return
         setChapters(list)
-        if (list.length > 0) {
-          setActiveChapterId((prev) =>
-            prev && list.some((c) => c.id === prev) ? prev : list[0].id,
-          )
-        } else {
-          setActiveChapterId(null)
-          setChapterData(null)
-        }
+        setActiveChapterId(list.length > 0 ? list[0].id : null)
       })
-      .catch((err) => setErrorMsg(extractErrorMessage(err)))
-  }, [selectedVolume])
+      .catch((err) => {
+        if (!cancelled) setErrorMsg(extractErrorMessage(err))
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [volumeId])
 
   const loadChapterData = useCallback(async (chapterId: number) => {
+    const seq = ++chapterLoadSeqRef.current
     setLoadingChapter(true)
     setErrorMsg(null)
     setSelectionInfo(null)
     setHoveredTerm(null)
     try {
       const data = await fetchChapterProofread(chapterId)
+      if (seq !== chapterLoadSeqRef.current) return
       setChapterData(data)
       setDraftText(data.translated_text)
       setSavedText(data.translated_text)
       setSaveState('saved')
     } catch (err) {
+      if (seq !== chapterLoadSeqRef.current) return
       setErrorMsg(extractErrorMessage(err))
     } finally {
-      setLoadingChapter(false)
+      if (seq === chapterLoadSeqRef.current) {
+        setLoadingChapter(false)
+      }
     }
   }, [])
 
@@ -402,7 +379,7 @@ export function ProofreadTab({
       setFrPreview(res)
       if (!dryRun) {
         notify(
-          `Đã thay thế ${res.total_matches} vị trí trên ${res.chapters_affected} chương của Tập ${selectedVolume.volume_number}.`,
+          `Đã thay thế ${res.total_matches} vị trí trên ${res.chapters_affected} chương của ${formatVolumeLabel(selectedVolume)}.`,
         )
         if (activeChapterId !== null) {
           await loadChapterData(activeChapterId)
@@ -445,53 +422,18 @@ export function ProofreadTab({
       : 0
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden">
+    <div className="h-full flex flex-col overflow-hidden">
       {/* Top Toolbar */}
-      <header className="shrink-0 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-5 py-3 space-y-2.5">
+      <header className="shrink-0 border-b border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-5 py-2.5 space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          {/* Context + Chapter Nav */}
+          {/* Chapter Nav */}
           <div className="flex flex-wrap items-center gap-2 text-xs">
-            <span
-              className={`px-2 py-0.5 font-semibold rounded border ${LANG_META[selectedSeries.source_lang].badgeClass}`}
-            >
-              {LANG_META[selectedSeries.source_lang].short}
+            <span className="font-semibold text-sm text-slate-900 dark:text-zinc-100">
+              Hiệu đính
             </span>
-
-            <select
-              aria-label="Chọn bộ truyện"
-              value={selectedSeries.id}
-              onChange={(e) => {
-                const found = seriesList.find(
-                  (s) => s.id === Number(e.target.value),
-                )
-                if (found) onSelectSeries(found)
-              }}
-              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950 font-semibold"
-            >
-              {seriesList.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.title}
-                </option>
-              ))}
-            </select>
-
-            <select
-              aria-label="Chọn tập truyện"
-              value={selectedVolume.id}
-              onChange={(e) => {
-                const found = volumes.find(
-                  (v) => v.id === Number(e.target.value),
-                )
-                if (found) onSelectVolume(found)
-              }}
-              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950"
-            >
-              {volumes.map((v) => (
-                <option key={v.id} value={v.id}>
-                  Tập {v.volume_number}: {v.title}
-                </option>
-              ))}
-            </select>
+            <span className="px-2 py-0.5 rounded-md bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 font-medium">
+              {formatVolumeLabel(selectedVolume)}
+            </span>
 
             {/* Chapter Switcher */}
             {chapters.length > 0 && (
@@ -514,7 +456,7 @@ export function ProofreadTab({
                   onChange={(e) =>
                     void handleSwitchChapter(Number(e.target.value))
                   }
-                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950 font-medium max-w-[230px]"
+                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950 font-medium max-w-[260px]"
                 >
                   {chapters.map((ch) => (
                     <option key={ch.id} value={ch.id}>
@@ -541,7 +483,7 @@ export function ProofreadTab({
             )}
           </div>
 
-          {/* Tools: Find & Replace, Selection Retranslate, Export DOCX & EPUB */}
+          {/* Primary Actions + Export/Tools Menu */}
           <div className="flex flex-wrap items-center gap-2">
             {/* Save badge */}
             <span
@@ -567,59 +509,52 @@ export function ProofreadTab({
 
             <button
               type="button"
-              disabled={chapters.length === 0}
-              onClick={() => {
-                setFrPreview(null)
-                setFrModalOpen(true)
-              }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border border-slate-200 dark:border-zinc-700 hover:bg-slate-50 dark:hover:bg-zinc-800 disabled:opacity-45 cursor-pointer"
-            >
-              <Replace className="w-3.5 h-3.5 text-indigo-500" />
-              Tìm & Thay thế toàn tập
-            </button>
-
-            <button
-              type="button"
               disabled={!activeChapterId}
               onClick={openRetranslateModal}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer ${
+              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-colors cursor-pointer disabled:opacity-45 ${
                 selectionInfo
                   ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs'
-                  : 'border border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-zinc-300 hover:bg-slate-50 dark:hover:bg-zinc-800'
+                  : 'border border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-800'
               }`}
             >
               <Sparkles className="w-3.5 h-3.5" />
               Dịch lại đoạn đang bôi đen
             </button>
 
-            <div className="inline-flex items-center rounded-xl border border-slate-200 dark:border-zinc-700 overflow-hidden text-xs">
-              <select
-                aria-label="Font DOCX"
-                value={docxFont}
-                onChange={(e) =>
-                  setDocxFont(e.target.value as 'Times New Roman' | 'Cambria')
-                }
-                className="px-2 py-1.5 bg-slate-50 dark:bg-zinc-950 border-r border-slate-200 dark:border-zinc-700 focus:outline-none"
-              >
-                <option value="Times New Roman">Times New Roman</option>
-                <option value="Cambria">Cambria</option>
-              </select>
-              <a
-                href={getVolumeDocxExportUrl(selectedVolume.id, docxFont)}
-                className="inline-flex items-center gap-1 px-3 py-1.5 font-semibold bg-sky-600 hover:bg-sky-700 text-white"
-              >
-                <FileText className="w-3.5 h-3.5" />
-                Tải .docx
-              </a>
-            </div>
-
-            <a
-              href={getVolumeEpubExportUrl(selectedVolume.id)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white"
-            >
-              <Download className="w-3.5 h-3.5" />
-              Tải .epub
-            </a>
+            <ActionMenu
+              label="Xuất bản & Công cụ"
+              icon={<MoreHorizontal className="w-3.5 h-3.5" />}
+              items={[
+                {
+                  label: 'Tìm & Thay thế toàn tập',
+                  icon: <Replace className="w-3.5 h-3.5 text-indigo-500" />,
+                  disabled: chapters.length === 0,
+                  onClick: () => {
+                    setFrPreview(null)
+                    setFrModalOpen(true)
+                  },
+                },
+                {
+                  label: 'Tải .docx (Times New Roman)',
+                  icon: <FileText className="w-3.5 h-3.5 text-sky-600" />,
+                  dividerBefore: true,
+                  href: getVolumeDocxExportUrl(
+                    selectedVolume.id,
+                    'Times New Roman',
+                  ),
+                },
+                {
+                  label: 'Tải .docx (Cambria)',
+                  icon: <FileText className="w-3.5 h-3.5 text-sky-600" />,
+                  href: getVolumeDocxExportUrl(selectedVolume.id, 'Cambria'),
+                },
+                {
+                  label: 'Tải .epub (Sách điện tử)',
+                  icon: <Download className="w-3.5 h-3.5 text-emerald-600" />,
+                  href: getVolumeEpubExportUrl(selectedVolume.id),
+                },
+              ]}
+            />
           </div>
         </div>
 
@@ -801,7 +736,7 @@ export function ProofreadTab({
                 <Replace className="w-5 h-5 text-indigo-500" />
                 <div>
                   <h3 className="text-base font-bold text-slate-900 dark:text-zinc-100">
-                    Tìm & Thay thế toàn Tập {selectedVolume.volume_number}
+                    Tìm & Thay thế — {formatVolumeLabel(selectedVolume)}
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-zinc-400">
                     Áp dụng trên toàn bộ bản dịch của tập, hỗ trợ biểu thức

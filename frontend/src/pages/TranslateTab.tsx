@@ -15,9 +15,7 @@ import { DebugContextModal } from '../components/DebugContextModal'
 import { SensitiveMaskModal } from '../components/SensitiveMaskModal'
 import {
   extractErrorMessage,
-  fetchSeriesList,
   fetchTranslateStatus,
-  fetchVolumes,
   getTranslateEventsUrl,
   pauseTranslationJob,
   resumeTranslationJob,
@@ -34,25 +32,19 @@ import type {
   TranslationMode,
   Volume,
 } from '../types'
-import { CHAPTER_STATUS_META, LANG_META, MODE_META } from '../types'
+import { CHAPTER_STATUS_META, MODE_META, formatVolumeLabel } from '../types'
 
 interface TranslateTabProps {
   selectedSeries: Series | null
   selectedVolume: Volume | null
-  onSelectSeries: (series: Series | null) => void
-  onSelectVolume: (volume: Volume | null) => void
   onBackToDashboard: () => void
 }
 
 export function TranslateTab({
   selectedSeries,
   selectedVolume,
-  onSelectSeries,
-  onSelectVolume,
   onBackToDashboard,
 }: TranslateTabProps) {
-  const [seriesList, setSeriesList] = useState<Series[]>([])
-  const [volumes, setVolumes] = useState<Volume[]>([])
   const [statusData, setStatusData] = useState<TranslateStatusResponse | null>(
     null,
   )
@@ -88,6 +80,7 @@ export function TranslateTab({
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [toastMsg, setToastMsg] = useState<string | null>(null)
   const logEndRef = useRef<HTMLDivElement | null>(null)
+  const loadSeqRef = useRef(0)
 
   const notify = (msg: string) => {
     setToastMsg(msg)
@@ -103,83 +96,85 @@ export function TranslateTab({
     setHybridCfg({ ...selectedSeries.hybrid_config })
   }, [selectedSeries])
 
-  // Load series list
-  useEffect(() => {
-    fetchSeriesList()
-      .then((list) => {
-        setSeriesList(list)
-        if (!selectedSeries && list.length > 0) onSelectSeries(list[0])
-      })
-      .catch(() => {})
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  const volumeId = selectedVolume?.id ?? null
 
-  // Load volumes
-  useEffect(() => {
-    if (!selectedSeries) {
-      setVolumes([])
-      return
-    }
-    fetchVolumes(selectedSeries.id)
-      .then((vList) => {
-        setVolumes(vList)
-        if (
-          vList.length > 0 &&
-          (!selectedVolume || selectedVolume.series_id !== selectedSeries.id)
-        ) {
-          onSelectVolume(vList[0])
+  const loadStatus = useCallback(
+    async (resetRange = false) => {
+      const seq = ++loadSeqRef.current
+      if (!volumeId) {
+        setStatusData(null)
+        setLogs([])
+        setStartChapter(1)
+        setEndChapter(1)
+        return
+      }
+      try {
+        const data = await fetchTranslateStatus(volumeId)
+        if (seq !== loadSeqRef.current) return
+        setStatusData(data)
+        if (data.chapters.length > 0) {
+          const minIdx = data.chapters[0].chapter_index
+          const maxIdx = data.chapters[data.chapters.length - 1].chapter_index
+          if (resetRange) {
+            setStartChapter(minIdx)
+            setEndChapter(maxIdx)
+          } else {
+            setStartChapter((prev) =>
+              prev < minIdx || prev > maxIdx ? minIdx : prev,
+            )
+            setEndChapter((prev) =>
+              prev < minIdx || prev > maxIdx ? maxIdx : prev,
+            )
+          }
+        } else {
+          setStartChapter(1)
+          setEndChapter(1)
         }
-      })
-      .catch(() => {})
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSeries?.id])
+        setLogs(data.recent_logs)
+      } catch (err) {
+        if (seq !== loadSeqRef.current) return
+        setErrorMsg(extractErrorMessage(err))
+      }
+    },
+    [volumeId],
+  )
 
-  const loadStatus = useCallback(async () => {
-    if (!selectedVolume) {
-      setStatusData(null)
+  // Reset all volume-scoped state immediately when switching activeVolumeId
+  useEffect(() => {
+    setStatusData(null)
+    setLogs([])
+    setDebugChapter(null)
+    setMaskChapter(null)
+    setErrorMsg(null)
+    setStartChapter(1)
+    setEndChapter(1)
+    void loadStatus(true)
+  }, [volumeId, loadStatus])
+
+  // Real-time Server-Sent Events (SSE) subscription keyed strictly by volumeId
+  useEffect(() => {
+    if (!volumeId) {
+      setSseConnected(false)
       return
     }
-    try {
-      const data = await fetchTranslateStatus(selectedVolume.id)
-      setStatusData(data)
-      if (data.chapters.length > 0) {
-        const minIdx = data.chapters[0].chapter_index
-        const maxIdx = data.chapters[data.chapters.length - 1].chapter_index
-        setStartChapter((prev) =>
-          prev < minIdx || prev > maxIdx ? minIdx : prev,
-        )
-        setEndChapter((prev) =>
-          prev < minIdx || prev > maxIdx || prev === 1 ? maxIdx : prev,
-        )
-      }
-      if (data.recent_logs.length > 0) {
-        setLogs(data.recent_logs)
-      }
-    } catch (err) {
-      setErrorMsg(extractErrorMessage(err))
+    let active = true
+    const es = new EventSource(getTranslateEventsUrl(volumeId))
+
+    es.onopen = () => {
+      if (active) setSseConnected(true)
     }
-  }, [selectedVolume])
-
-  useEffect(() => {
-    setLogs([])
-    void loadStatus()
-  }, [loadStatus])
-
-  // Real-time Server-Sent Events (SSE) subscription
-  useEffect(() => {
-    if (!selectedVolume) return
-    const es = new EventSource(getTranslateEventsUrl(selectedVolume.id))
-
-    es.onopen = () => setSseConnected(true)
-    es.onerror = () => setSseConnected(false)
+    es.onerror = () => {
+      if (active) setSseConnected(false)
+    }
     es.onmessage = (evt) => {
+      if (!active) return
       try {
         const payload = JSON.parse(evt.data) as TranslateLogEvent
         if (payload.type === 'log') {
           setLogs((prev) => [...prev.slice(-240), payload])
         } else if (payload.type === 'chapter_update') {
           setStatusData((prev) => {
-            if (!prev) return prev
+            if (!prev || prev.volume_id !== volumeId) return prev
             const updatedChapters = prev.chapters.map((ch) =>
               ch.id === payload.chapter_id
                 ? {
@@ -216,7 +211,7 @@ export function TranslateTab({
           })
         } else if (payload.type === 'job_status') {
           setStatusData((prev) =>
-            prev
+            prev && prev.volume_id === volumeId
               ? {
                   ...prev,
                   job_state: payload.state ?? prev.job_state,
@@ -226,7 +221,7 @@ export function TranslateTab({
               : prev,
           )
           if (payload.state === 'completed' || payload.state === 'stopped') {
-            void loadStatus()
+            void loadStatus(false)
           }
         }
       } catch {
@@ -235,10 +230,11 @@ export function TranslateTab({
     }
 
     return () => {
+      active = false
       es.close()
       setSseConnected(false)
     }
-  }, [selectedVolume, loadStatus])
+  }, [volumeId, loadStatus])
 
   // Auto-scroll terminal logs
   useEffect(() => {
@@ -352,70 +348,28 @@ export function TranslateTab({
   return (
     <div className="max-w-[1600px] mx-auto p-5 space-y-4">
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-1.5">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-zinc-100">
-              Dịch thuật Đa chế độ
-            </h2>
-            <span
-              className={`px-2 py-0.5 text-xs font-semibold rounded-md border ${LANG_META[selectedSeries.source_lang].badgeClass}`}
-            >
-              {LANG_META[selectedSeries.source_lang].short}
-            </span>
-            <span
-              className={`px-2 py-0.5 text-xs font-medium rounded-full ${
-                sseConnected
-                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
-                  : 'bg-slate-100 text-slate-500 dark:bg-zinc-800 dark:text-zinc-400'
-              }`}
-            >
-              SSE: {sseConnected ? 'Live' : 'Kết nối...'}
-            </span>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <select
-              aria-label="Chọn bộ truyện"
-              value={selectedSeries.id}
-              onChange={(e) => {
-                const found = seriesList.find(
-                  (s) => s.id === Number(e.target.value),
-                )
-                if (found) onSelectSeries(found)
-              }}
-              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 font-medium"
-            >
-              {seriesList.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.title}
-                </option>
-              ))}
-            </select>
-
-            <select
-              aria-label="Chọn tập truyện"
-              value={selectedVolume.id}
-              onChange={(e) => {
-                const found = volumes.find(
-                  (v) => v.id === Number(e.target.value),
-                )
-                if (found) onSelectVolume(found)
-              }}
-              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900"
-            >
-              {volumes.map((v) => (
-                <option key={v.id} value={v.id}>
-                  Tập {v.volume_number}: {v.title}
-                </option>
-              ))}
-            </select>
-          </div>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-zinc-100">
+            Dịch thuật Đa chế độ
+          </h2>
+          <span className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-zinc-800 text-xs font-medium text-slate-600 dark:text-zinc-300">
+            {formatVolumeLabel(selectedVolume)}
+          </span>
+          <span
+            className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+              sseConnected
+                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
+                : 'bg-slate-100 text-slate-500 dark:bg-zinc-800 dark:text-zinc-400'
+            }`}
+          >
+            SSE: {sseConnected ? 'Live' : 'Kết nối...'}
+          </span>
         </div>
 
         <button
           type="button"
-          onClick={() => void loadStatus()}
+          onClick={() => void loadStatus(false)}
           className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-slate-50 dark:hover:bg-zinc-800 cursor-pointer"
         >
           <RefreshCw className="w-3.5 h-3.5" />
@@ -490,7 +444,7 @@ export function TranslateTab({
               className="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950 font-medium"
             >
               <option value="ln_vn">LN-VN Chuẩn (Master XML + Context)</option>
-              <option value="freeform">Freeform / Aiko (Tự do + Glossary gọn)</option>
+              <option value="freeform">Dịch Tự Do (Freeform — Glossary gọn)</option>
               <option value="hybrid">Hybrid (Tùy chọn từng khối Context)</option>
             </select>
           </div>
