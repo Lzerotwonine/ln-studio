@@ -632,3 +632,56 @@ export interface ApplyMasksResponse {
   }>
   saved_masks_count: number
 }
+
+// ---------- Phase 5: Proofreading & Publication Export ----------
+
+export interface GlossaryHighlightItem {
+  id: number
+  source_term: string
+  vi_term: string
+  reading: string
+  han_viet: string
+  english_meaning: string
+  term_type: string
+  status: string
+}
+
+export interface ChapterProofreadData {
+  id: number
+  volume_id: number
+  series_id: number
+  chapter_index: number
+  title: string
+  raw_text: string
+  masked_raw_text: string | null
+  translated_text: string
+  status: ChapterStatus
+  used_slot: string | null
+  char_ratio: number
+  error_message: string | null
+  updated_at: string
+  glossary_highlights: GlossaryHighlightItem[]
+}
+
+export interface FindReplaceResponse {
+  volume_id: number
+  dry_run: boolean
+  use_regex: boolean
+  case_sensitive: boolean
+  total_matches: number
+  chapters_affected: number
+  affected_chapters: Array<{
+    chapter_id: number
+    chapter_index: number
+    title: string
+    matches: number
+    sample_snippet: string
+  }>
+}
+
+export interface RetranslateSelectionResponse {
+  chapter_id: number
+  original_selection: string
+  retranslated_text: string
+  used_slot: string
+}

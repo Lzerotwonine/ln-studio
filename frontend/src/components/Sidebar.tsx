@@ -33,7 +33,7 @@ const NAV_ITEMS: Array<{
   { id: 'glossary', label: 'Thuật ngữ', icon: BookMarked },
   { id: 'characters', label: 'Nhân vật & Xưng hô', icon: Users },
   { id: 'translate', label: 'Dịch thuật', icon: Languages },
-  { id: 'proofread', label: 'Hiệu đính', icon: CheckCheck, phaseTag: 'P5' },
+  { id: 'proofread', label: 'Hiệu đính', icon: CheckCheck },
   { id: 'settings', label: 'Cài đặt', icon: Settings },
 ]
 

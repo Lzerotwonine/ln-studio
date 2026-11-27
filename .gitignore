@@ -7,3 +7,5 @@ data/
 *.db
 *.sqlite3
 .env
+_ref_study
+docs/legacy_scripts/

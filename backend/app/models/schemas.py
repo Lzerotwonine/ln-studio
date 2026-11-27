@@ -706,3 +706,85 @@ class ApplyMasksResponse(BaseModel):
     applied_count: int
     applied_masks: list[dict]
     saved_masks_count: int
+
+
+# ---------- Phase 5: Proofreading & Publication Export ----------
+
+class GlossaryHighlightItem(BaseModel):
+    id: int
+    source_term: str
+    vi_term: str
+    reading: str
+    han_viet: str
+    english_meaning: str
+    term_type: str
+    status: str
+
+
+class ChapterProofreadResponse(BaseModel):
+    id: int
+    volume_id: int
+    series_id: int
+    chapter_index: int
+    title: str
+    raw_text: str
+    masked_raw_text: str | None = None
+    translated_text: str
+    status: str
+    used_slot: str | None = None
+    char_ratio: float
+    error_message: str | None = None
+    updated_at: str
+    glossary_highlights: list[GlossaryHighlightItem]
+
+
+class SaveTranslationRequest(BaseModel):
+    translated_text: str
+
+
+class SaveTranslationResponse(BaseModel):
+    chapter_id: int
+    status: str
+    char_ratio: float
+    translated_chars: int
+    updated_at: str
+
+
+class FindReplaceRequest(BaseModel):
+    find_text: str = Field(..., min_length=1)
+    replace_text: str = ""
+    use_regex: bool = False
+    case_sensitive: bool = True
+    dry_run: bool = False
+
+
+class FindReplaceAffectedItem(BaseModel):
+    chapter_id: int
+    chapter_index: int
+    title: str
+    matches: int
+    sample_snippet: str
+
+
+class FindReplaceResponse(BaseModel):
+    volume_id: int
+    dry_run: bool
+    use_regex: bool
+    case_sensitive: bool
+    total_matches: int
+    chapters_affected: int
+    affected_chapters: list[FindReplaceAffectedItem]
+
+
+class RetranslateSelectionRequest(BaseModel):
+    selected_text: str = Field(..., min_length=1)
+    source_side: Literal["raw", "translated"] = "translated"
+    instruction: str = ""
+    temperature: float = Field(default=0.5, ge=0.0, le=1.5)
+
+
+class RetranslateSelectionResponse(BaseModel):
+    chapter_id: int
+    original_selection: str
+    retranslated_text: str
+    used_slot: str

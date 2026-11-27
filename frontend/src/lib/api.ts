@@ -2,11 +2,13 @@ import axios from 'axios'
 import type {
   ApiKeyItem,
   ApplyMasksResponse,
+  ChapterProofreadData,
   ChapterSummary,
   CharacterAppearance,
   CharacterWithState,
   ContinuityStatus,
   DebugContextResponse,
+  FindReplaceResponse,
   GlossaryExtractResponse,
   GlossaryImportResponse,
   GlossaryListResponse,
@@ -22,6 +24,7 @@ import type {
   QuotaStatusResponse,
   ReducePhaseResponse,
   RelationshipItem,
+  RetranslateSelectionResponse,
   SensitiveMaskItem,
   SensitiveScanResponse,
   Series,
@@ -714,4 +717,76 @@ export async function applyChapterMasks(
     payload,
   )
   return data
+}
+
+// ---------- Phase 5: Proofreading & Publication Export ----------
+
+export async function fetchChapterProofread(
+  chapterId: number,
+): Promise<ChapterProofreadData> {
+  const { data } = await http.get<ChapterProofreadData>(
+    `/api/chapters/${chapterId}/proofread`,
+  )
+  return data
+}
+
+export async function saveChapterTranslation(
+  chapterId: number,
+  translatedText: string,
+): Promise<{
+  chapter_id: number
+  status: string
+  char_ratio: number
+  translated_chars: number
+  updated_at: string
+}> {
+  const { data } = await http.patch(`/api/chapters/${chapterId}/translation`, {
+    translated_text: translatedText,
+  })
+  return data
+}
+
+export async function findReplaceVolume(
+  volumeId: number,
+  payload: {
+    find_text: string
+    replace_text: string
+    use_regex: boolean
+    case_sensitive: boolean
+    dry_run: boolean
+  },
+): Promise<FindReplaceResponse> {
+  const { data } = await http.post<FindReplaceResponse>(
+    `/api/volumes/${volumeId}/find-replace`,
+    payload,
+  )
+  return data
+}
+
+export async function retranslateChapterSelection(
+  chapterId: number,
+  payload: {
+    selected_text: string
+    source_side: 'raw' | 'translated'
+    instruction?: string
+    temperature?: number
+  },
+): Promise<RetranslateSelectionResponse> {
+  const { data } = await http.post<RetranslateSelectionResponse>(
+    `/api/chapters/${chapterId}/retranslate-selection`,
+    payload,
+  )
+  return data
+}
+
+export function getVolumeDocxExportUrl(
+  volumeId: number,
+  font: 'Times New Roman' | 'Cambria' = 'Times New Roman',
+): string {
+  const sp = new URLSearchParams({ font })
+  return `${baseURL}/api/volumes/${volumeId}/export/docx?${sp.toString()}`
+}
+
+export function getVolumeEpubExportUrl(volumeId: number): string {
+  return `${baseURL}/api/volumes/${volumeId}/export/epub`
 }

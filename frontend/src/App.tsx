@@ -4,7 +4,7 @@ import { fetchHealth } from './lib/api'
 import { ContinuityTab } from './pages/ContinuityTab'
 import { DashboardPage } from './pages/DashboardPage'
 import { GlossaryTab } from './pages/GlossaryTab'
-import { PlaceholderPage } from './pages/PlaceholderPage'
+import { ProofreadTab } from './pages/ProofreadTab'
 import { SettingsPage } from './pages/SettingsPage'
 import { TranslateTab } from './pages/TranslateTab'
 import type { NavSection, Series, Volume } from './types'
@@ -103,20 +103,17 @@ export function App() {
           />
         )}
 
-        {activeSection === 'settings' && <SettingsPage />}
+        {activeSection === 'proofread' && (
+          <ProofreadTab
+            selectedSeries={selectedSeries}
+            selectedVolume={selectedVolume}
+            onSelectSeries={setSelectedSeries}
+            onSelectVolume={setSelectedVolume}
+            onBackToDashboard={() => setActiveSection('dashboard')}
+          />
+        )}
 
-        {activeSection !== 'dashboard' &&
-          activeSection !== 'glossary' &&
-          activeSection !== 'characters' &&
-          activeSection !== 'translate' &&
-          activeSection !== 'settings' && (
-            <PlaceholderPage
-              section={activeSection}
-              selectedSeries={selectedSeries}
-              selectedVolume={selectedVolume}
-              onBackToDashboard={() => setActiveSection('dashboard')}
-            />
-          )}
+        {activeSection === 'settings' && <SettingsPage />}
       </main>
     </div>
   )
