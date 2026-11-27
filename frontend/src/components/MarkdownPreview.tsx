@@ -3,35 +3,100 @@ import { useState } from 'react'
 
 interface MarkdownPreviewProps {
   content: string
+  volumeId?: number | null
   fontSize?: number
   emptyPlaceholder?: string
+  searchQuery?: string
+  searchCaseSensitive?: boolean
+  activeSearchIndex?: number
 }
 
-const IMAGE_LINE_RE = /^!\[([^\]]*)\]\((\/api\/media\/vol_\d+\/[^/\s)]+|https?:\/\/[^\s)]+)\)$/
+const IMAGE_LINE_RE =
+  /^!\[([^\]]*)\]\((images\/[^/\s)]+|\/api\/media\/vol_\d+\/[^/\s)]+|https?:\/\/[^\s)]+)\)$/
 const INLINE_RE = /(\*\*\*[^*\n]+?\*\*\*|\*\*[^*\n]+?\*\*|\*[^*\n]+?\*|`[^`\n]+?`)/g
 
-function renderInlineMarkdown(text: string): React.ReactNode[] {
+export function resolveDisplayMediaUrl(
+  rawSrc: string,
+  volumeId?: number | null,
+): string {
+  const cleaned = (rawSrc || '').trim()
+  if (cleaned.startsWith('images/') && volumeId) {
+    const fname = cleaned.slice('images/'.length)
+    return `/api/media/vol_${volumeId}/${fname}`
+  }
+  return cleaned
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function highlightPlainText(
+  text: string,
+  searchQuery: string,
+  caseSensitive: boolean,
+  counter: { current: number },
+  activeIndex: number,
+  keyPrefix: string,
+): React.ReactNode {
+  if (!searchQuery) return text
+  const re = new RegExp(`(${escapeRegExp(searchQuery)})`, caseSensitive ? 'g' : 'gi')
+  const parts = text.split(re)
+  if (parts.length === 1) return text
+  return parts.map((p, i) => {
+    if (!p) return null
+    const isMatch = caseSensitive
+      ? p === searchQuery
+      : p.toLowerCase() === searchQuery.toLowerCase()
+    if (!isMatch) return <span key={`${keyPrefix}-${i}`}>{p}</span>
+    const matchIdx = counter.current++
+    const isActive = matchIdx === activeIndex
+    return (
+      <mark
+        key={`${keyPrefix}-${i}`}
+        data-search-match={matchIdx}
+        className={`rounded px-0.5 ${
+          isActive
+            ? 'bg-orange-400 text-slate-950 ring-2 ring-orange-500'
+            : 'bg-yellow-200 dark:bg-yellow-500/35 text-inherit'
+        }`}
+      >
+        {p}
+      </mark>
+    )
+  })
+}
+
+function renderInlineMarkdown(
+  text: string,
+  searchQuery: string,
+  caseSensitive: boolean,
+  counter: { current: number },
+  activeIndex: number,
+  lineIdx: number,
+): React.ReactNode[] {
   const parts = text.split(INLINE_RE)
   return parts.map((part, idx) => {
     if (!part) return null
+    const kp = `${lineIdx}-${idx}`
     if (part.startsWith('***') && part.endsWith('***') && part.length > 6) {
       return (
         <strong key={idx} className="font-bold italic">
-          {part.slice(3, -3)}
+          {highlightPlainText(part.slice(3, -3), searchQuery, caseSensitive, counter, activeIndex, kp)}
         </strong>
       )
     }
     if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
       return (
         <strong key={idx} className="font-bold">
-          {part.slice(2, -2)}
+          {highlightPlainText(part.slice(2, -2), searchQuery, caseSensitive, counter, activeIndex, kp)}
         </strong>
       )
     }
     if (part.startsWith('*') && part.endsWith('*') && part.length > 2) {
       return (
         <em key={idx} className="italic">
-          {part.slice(1, -1)}
+          {highlightPlainText(part.slice(1, -1), searchQuery, caseSensitive, counter, activeIndex, kp)}
         </em>
       )
     }
@@ -41,18 +106,26 @@ function renderInlineMarkdown(text: string): React.ReactNode[] {
           key={idx}
           className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-zinc-800 font-mono text-[0.88em]"
         >
-          {part.slice(1, -1)}
+          {highlightPlainText(part.slice(1, -1), searchQuery, caseSensitive, counter, activeIndex, kp)}
         </code>
       )
     }
-    return <span key={idx}>{part}</span>
+    return (
+      <span key={idx}>
+        {highlightPlainText(part, searchQuery, caseSensitive, counter, activeIndex, kp)}
+      </span>
+    )
   })
 }
 
 export function MarkdownPreview({
   content,
+  volumeId = null,
   fontSize = 15,
   emptyPlaceholder = 'Chưa có nội dung để xem trước.',
+  searchQuery = '',
+  searchCaseSensitive = false,
+  activeSearchIndex = -1,
 }: MarkdownPreviewProps) {
   const [zoomImg, setZoomImg] = useState<{ src: string; alt: string } | null>(
     null,
@@ -66,6 +139,7 @@ export function MarkdownPreview({
   }
 
   const lines = trimmed.replace(/\r\n/g, '\n').split('\n')
+  const matchCounter = { current: 0 }
 
   return (
     <>
@@ -80,7 +154,7 @@ export function MarkdownPreview({
           const imgMatch = line.match(IMAGE_LINE_RE)
           if (imgMatch) {
             const alt = imgMatch[1] || 'Minh họa'
-            const src = imgMatch[2]
+            const src = resolveDisplayMediaUrl(imgMatch[2], volumeId)
             return (
               <figure
                 key={idx}
@@ -121,7 +195,7 @@ export function MarkdownPreview({
                 key={idx}
                 className="text-lg font-bold text-slate-900 dark:text-zinc-100 pt-2"
               >
-                {renderInlineMarkdown(line.slice(4))}
+                {renderInlineMarkdown(line.slice(4), searchQuery, searchCaseSensitive, matchCounter, activeSearchIndex, idx)}
               </h3>
             )
           }
@@ -132,7 +206,7 @@ export function MarkdownPreview({
                 key={idx}
                 className="text-xl font-bold text-slate-900 dark:text-zinc-100 pt-2"
               >
-                {renderInlineMarkdown(line.slice(3))}
+                {renderInlineMarkdown(line.slice(3), searchQuery, searchCaseSensitive, matchCounter, activeSearchIndex, idx)}
               </h2>
             )
           }
@@ -143,7 +217,7 @@ export function MarkdownPreview({
                 key={idx}
                 className="text-2xl font-bold text-center text-slate-900 dark:text-zinc-100 py-2"
               >
-                {renderInlineMarkdown(line.slice(2))}
+                {renderInlineMarkdown(line.slice(2), searchQuery, searchCaseSensitive, matchCounter, activeSearchIndex, idx)}
               </h1>
             )
           }
@@ -154,14 +228,14 @@ export function MarkdownPreview({
                 key={idx}
                 className="pl-4 border-l-3 border-indigo-400/70 italic text-slate-600 dark:text-zinc-300"
               >
-                {renderInlineMarkdown(line.slice(2))}
+                {renderInlineMarkdown(line.slice(2), searchQuery, searchCaseSensitive, matchCounter, activeSearchIndex, idx)}
               </blockquote>
             )
           }
 
           return (
             <p key={idx} className="indent-6 text-justify">
-              {renderInlineMarkdown(line)}
+              {renderInlineMarkdown(line, searchQuery, searchCaseSensitive, matchCounter, activeSearchIndex, idx)}
             </p>
           )
         })}

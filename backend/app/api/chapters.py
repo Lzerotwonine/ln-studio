@@ -105,7 +105,7 @@ def get_chapter_detail(chapter_id: int) -> ChapterDetailResponse:
     with db_session() as conn:
         row = conn.execute(
             """
-            SELECT id, volume_id, chapter_index, title, raw_text, translated_text, status, updated_at
+            SELECT id, volume_id, chapter_index, title, raw_text, COALESCE(source_html, '') AS source_html, translated_text, status, updated_at
             FROM chapters
             WHERE id = ?
             """,

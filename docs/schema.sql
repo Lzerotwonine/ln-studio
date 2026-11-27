@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS chapters (
     chapter_index INTEGER NOT NULL,
     title TEXT DEFAULT '',
     raw_text TEXT NOT NULL,
+    source_html TEXT DEFAULT '',            -- Bản HTML đã làm sạch từ EPUB cho chế độ Bản đọc
     masked_raw_text TEXT,                   -- Bản đã che từ nhạy cảm (nếu từng bị chặn)
     translated_text TEXT DEFAULT '',
     summary_json TEXT,                      -- Kết quả MAP PHASE dạng JSON (có dialogue_interactions)

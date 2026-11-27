@@ -200,6 +200,37 @@ class TaskModelsUpdatePayload(BaseModel):
     tasks: dict[str, TaskModelAssignment]
 
 
+class DiscoveredModelItem(BaseModel):
+    id: str
+    display_name: str = ""
+    description: str = ""
+    input_token_limit: int | None = None
+    output_token_limit: int | None = None
+
+
+class ModelDiscoverRequest(BaseModel):
+    key_id: int | None = None
+
+
+class ModelDiscoverResponse(BaseModel):
+    key_used: str
+    models: list[DiscoveredModelItem]
+
+
+class ModelTestRequest(BaseModel):
+    model: str = Field(..., min_length=1, max_length=120)
+    key_id: int | None = None
+
+
+class ModelTestResponse(BaseModel):
+    ok: bool
+    model: str
+    key_used: str = ""
+    latency_ms: int = 0
+    reply_preview: str = ""
+    error: str | None = None
+
+
 class QuotaSlotResponse(BaseModel):
     slot_id: str
     key_name: str
@@ -363,6 +394,7 @@ class ChapterDetailResponse(BaseModel):
     chapter_index: int
     title: str
     raw_text: str
+    source_html: str = ""
     translated_text: str
     status: str
     updated_at: str
@@ -515,6 +547,16 @@ class GlossaryImportResponse(BaseModel):
     imported: int
     updated: int
     skipped: int
+
+
+class GlossaryImportPreviewResponse(BaseModel):
+    filename: str
+    delimiter: str
+    has_header: bool
+    headers: list[str]
+    suggested_mapping: dict[str, int | None]
+    sample_rows: list[list[str]]
+    total_rows: int
 
 
 # ---------- Phase 3: Continuity, Characters & Relationships ----------
@@ -773,6 +815,44 @@ class DebugContextResponse(BaseModel):
     ignored_shared_parts: list[str]
 
 
+class WebPromptRequest(BaseModel):
+    mode: TranslationMode | None = None
+    hybrid_config: HybridConfig | None = None
+    system_prompt_override: str | None = None
+    pre_mask: bool = False
+    mature_mode: bool = False
+
+
+class WebPromptResponse(BaseModel):
+    chapter_id: int
+    chapter_index: int
+    chapter_title: str
+    mode: str
+    system_instruction: str
+    user_prompt: str
+    combined_prompt: str
+    protected_images: list[str] = Field(default_factory=list)
+    using_masked_text: bool = False
+    pre_masked_count: int = 0
+    source_chars: int = 0
+    estimated_tokens: int = 0
+
+
+class WebImportTranslationRequest(BaseModel):
+    translated_text: str = Field(..., min_length=1)
+    protected_images: list[str] | None = None
+
+
+class WebImportTranslationResponse(BaseModel):
+    chapter_id: int
+    chapter_index: int
+    status: str
+    char_ratio: float
+    translated_chars: int
+    restored_images_count: int = 0
+    missing_images_count: int = 0
+
+
 MaskSourceLang = Literal["all", "ja", "zh", "ko"]
 
 
@@ -859,6 +939,7 @@ class ChapterProofreadResponse(BaseModel):
     chapter_index: int
     title: str
     raw_text: str
+    source_html: str = ""
     masked_raw_text: str | None = None
     translated_text: str
     status: str

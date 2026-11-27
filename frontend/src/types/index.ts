@@ -409,6 +409,16 @@ export interface GlossaryImportResponse {
   skipped: number
 }
 
+export interface GlossaryImportPreviewResponse {
+  filename: string
+  delimiter: string
+  has_header: boolean
+  headers: string[]
+  suggested_mapping: Record<string, number | null>
+  sample_rows: string[][]
+  total_rows: number
+}
+
 // ---------- Phase 3: Continuity, Characters & Relationships ----------
 
 export type CharacterAppearance = 'ACTUAL' | 'MENTIONED'
@@ -721,6 +731,7 @@ export interface ChapterProofreadData {
   chapter_index: number
   title: string
   raw_text: string
+  source_html?: string
   masked_raw_text: string | null
   translated_text: string
   status: ChapterStatus
@@ -826,4 +837,53 @@ export interface ReferenceFileItem {
 
 export interface ReferenceFileDetail extends ReferenceFileItem {
   content: string
+}
+
+// ---------- Batch D: Model Discovery, Live Probe & Web Translation ----------
+
+export interface DiscoveredModelItem {
+  id: string
+  display_name: string
+  description: string
+  input_token_limit: number | null
+  output_token_limit: number | null
+}
+
+export interface ModelDiscoverResponse {
+  key_used: string
+  models: DiscoveredModelItem[]
+}
+
+export interface ModelTestResponse {
+  ok: boolean
+  model: string
+  key_used: string
+  latency_ms: number
+  reply_preview: string
+  error: string | null
+}
+
+export interface WebPromptResponse {
+  chapter_id: number
+  chapter_index: number
+  chapter_title: string
+  mode: string
+  system_instruction: string
+  user_prompt: string
+  combined_prompt: string
+  protected_images: string[]
+  using_masked_text: boolean
+  pre_masked_count: number
+  source_chars: number
+  estimated_tokens: number
+}
+
+export interface WebImportTranslationResponse {
+  chapter_id: number
+  chapter_index: number
+  status: string
+  char_ratio: number
+  translated_chars: number
+  restored_images_count: number
+  missing_images_count: number
 }

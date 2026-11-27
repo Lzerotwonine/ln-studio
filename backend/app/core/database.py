@@ -14,17 +14,19 @@ SCHEMA_PATH = PROJECT_ROOT / "docs" / "schema.sql"
 DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "app.db"
 
 DEFAULT_MODELS: list[str] = [
+    "gemini-flash-latest",
+    "gemini-flash-lite-latest",
     "gemini-2.5-flash",
     "gemini-2.5-pro",
-    "gemini-2.0-flash",
 ]
 
 DEFAULT_MODEL_LIMITS: dict[str, dict[str, int]] = {
     "default": {"rpm": 10, "rpd": 250},
+    "gemini-flash-latest": {"rpm": 10, "rpd": 250},
+    "gemini-flash-lite-latest": {"rpm": 15, "rpd": 1000},
     "gemini-2.5-flash": {"rpm": 10, "rpd": 250},
     "gemini-2.5-flash-lite": {"rpm": 15, "rpd": 1000},
     "gemini-2.5-pro": {"rpm": 5, "rpd": 100},
-    "gemini-2.0-flash": {"rpm": 15, "rpd": 1500},
 }
 
 TASK_MODEL_KEYS: tuple[str, ...] = (
@@ -38,28 +40,28 @@ TASK_MODEL_KEYS: tuple[str, ...] = (
 
 DEFAULT_TASK_MODELS: dict[str, dict[str, Any]] = {
     "glossary_translate": {
-        "primary": "gemini-2.5-flash",
-        "fallbacks": ["gemini-2.0-flash", "gemini-2.5-flash-lite"],
+        "primary": "gemini-flash-latest",
+        "fallbacks": ["gemini-flash-lite-latest", "gemini-2.5-flash"],
     },
     "continuity_map": {
-        "primary": "gemini-2.5-flash-lite",
-        "fallbacks": ["gemini-2.5-flash", "gemini-2.0-flash"],
+        "primary": "gemini-flash-lite-latest",
+        "fallbacks": ["gemini-flash-latest", "gemini-2.5-flash-lite"],
     },
     "continuity_reduce": {
-        "primary": "gemini-2.5-flash",
-        "fallbacks": ["gemini-2.5-pro", "gemini-2.0-flash"],
+        "primary": "gemini-flash-latest",
+        "fallbacks": ["gemini-2.5-pro", "gemini-2.5-flash"],
     },
     "translate_main": {
         "primary": "gemini-2.5-pro",
-        "fallbacks": ["gemini-2.5-flash", "gemini-2.0-flash"],
+        "fallbacks": ["gemini-flash-latest", "gemini-2.5-flash"],
     },
     "sensitive_scan": {
-        "primary": "gemini-2.5-flash-lite",
-        "fallbacks": ["gemini-2.5-flash"],
+        "primary": "gemini-flash-lite-latest",
+        "fallbacks": ["gemini-flash-latest"],
     },
     "proofread_retranslate": {
-        "primary": "gemini-2.5-flash",
-        "fallbacks": ["gemini-2.5-pro", "gemini-2.0-flash"],
+        "primary": "gemini-flash-latest",
+        "fallbacks": ["gemini-2.5-pro", "gemini-2.5-flash"],
     },
 }
 
@@ -232,6 +234,15 @@ def init_db(db_path: Path | str | None = None) -> Path:
             set_setting(conn, "model_limits", DEFAULT_MODEL_LIMITS)
         if get_setting(conn, "task_models") is None:
             set_setting(conn, "task_models", DEFAULT_TASK_MODELS)
+
+        # Idempotent schema migration: chapters.source_html
+        ch_cols = {
+            r["name"] for r in conn.execute("PRAGMA table_info(chapters)").fetchall()
+        }
+        if "source_html" not in ch_cols:
+            conn.execute(
+                "ALTER TABLE chapters ADD COLUMN source_html TEXT DEFAULT ''"
+            )
 
         # Idempotent schema migration: sensitive_masks.source_lang
         sm_cols = {

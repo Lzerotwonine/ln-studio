@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from typing import Any, Literal
 
@@ -16,6 +17,7 @@ from app.models.schemas import (
     GlossaryDuplicateMode,
     GlossaryExtractRequest,
     GlossaryExtractResponse,
+    GlossaryImportPreviewResponse,
     GlossaryImportResponse,
     GlossaryListResponse,
     GlossarySortBy,
@@ -36,6 +38,7 @@ from app.services.glossary_service import (
     extract_volume_glossary,
     import_glossary_tabular,
     list_glossary_terms,
+    preview_glossary_tabular,
     render_glossary_xml,
     translate_new_glossary_terms,
     translate_selected_glossary_terms,
@@ -309,6 +312,27 @@ def bulk_delete_glossary_terms(payload: GlossaryBulkDeleteRequest) -> dict[str, 
 
 
 @router.post(
+    "/series/{series_id}/glossary/import-preview",
+    response_model=GlossaryImportPreviewResponse,
+)
+async def preview_glossary_import_file(
+    series_id: int,
+    file: UploadFile = File(...),
+) -> GlossaryImportPreviewResponse:
+    with db_session() as conn:
+        if conn.execute("SELECT id FROM series WHERE id = ?", (series_id,)).fetchone() is None:
+            raise HTTPException(status_code=404, detail="Không tìm thấy bộ truyện.")
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Thiếu tên tệp TSV/CSV.")
+    raw = await file.read()
+    try:
+        data = preview_glossary_tabular(file.filename, raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return GlossaryImportPreviewResponse(**data)
+
+
+@router.post(
     "/series/{series_id}/glossary/import",
     response_model=GlossaryImportResponse,
 )
@@ -319,10 +343,24 @@ async def import_glossary_file(
     duplicate_mode: GlossaryDuplicateMode = Form(default="upsert"),
     default_first_seen_vol: int = Form(default=0),
     force_default_status: bool = Form(default=True),
+    column_mapping_json: str | None = Form(default=None),
+    has_header: bool | None = Form(default=None),
 ) -> GlossaryImportResponse:
     if not file.filename:
         raise HTTPException(status_code=400, detail="Thiếu tên tệp TSV/CSV.")
     raw = await file.read()
+    parsed_mapping: dict[str, int | None] | None = None
+    if column_mapping_json and column_mapping_json.strip():
+        try:
+            loaded = json.loads(column_mapping_json)
+            if not isinstance(loaded, dict):
+                raise ValueError("column_mapping_json phải là JSON object.")
+            parsed_mapping = {
+                str(k): (int(v) if v is not None and str(v).strip() != "" else None)
+                for k, v in loaded.items()
+            }
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(status_code=400, detail=f"Ánh xạ cột không hợp lệ: {exc}")
     try:
         res = import_glossary_tabular(
             series_id,
@@ -332,6 +370,8 @@ async def import_glossary_file(
             duplicate_mode=duplicate_mode,
             default_first_seen_vol=default_first_seen_vol,
             force_default_status=force_default_status,
+            column_mapping=parsed_mapping,
+            has_header=has_header,
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

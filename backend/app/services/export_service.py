@@ -26,7 +26,7 @@ from app.services.languages.base import normalize_term_key
 ALLOWED_DOCX_FONTS = {"Times New Roman", "Cambria"}
 
 _MD_IMAGE_LINE_RE = re.compile(
-    r"^!\[(?P<alt>[^\]]*)\]\(/api/media/vol_(?P<vol>\d+)/(?P<fname>[^/\s)]+)\)$"
+    r"^!\[(?P<alt>[^\]]*)\]\((?:images/(?P<rel_fname>[^/\s)]+)|/api/media/vol_(?P<vol>\d+)/(?P<abs_fname>[^/\s)]+))\)$"
 )
 _MD_INLINE_RE = re.compile(
     r"(\*\*\*[^*\n]+?\*\*\*|\*\*[^*\n]+?\*\*|\*[^*\n]+?\*)"
@@ -277,9 +277,9 @@ def export_volume_docx(
         for para_text in paragraphs:
             img_match = _MD_IMAGE_LINE_RE.match(para_text)
             if img_match:
-                img_path = _resolve_media_path(
-                    int(img_match.group("vol")), img_match.group("fname")
-                )
+                ref_vol = int(img_match.group("vol")) if img_match.group("vol") else volume_id
+                ref_fname = img_match.group("rel_fname") or img_match.group("abs_fname") or ""
+                img_path = _resolve_media_path(ref_vol, ref_fname)
                 if img_path is not None and img_path.suffix.lower() in _DOCX_IMAGE_EXTS:
                     img_p = doc.add_paragraph()
                     img_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -348,8 +348,8 @@ def export_volume_epub(
                     continue
                 img_match = _MD_IMAGE_LINE_RE.match(line)
                 if img_match:
-                    vol_ref = int(img_match.group("vol"))
-                    fname = img_match.group("fname")
+                    vol_ref = int(img_match.group("vol")) if img_match.group("vol") else volume_id
+                    fname = img_match.group("rel_fname") or img_match.group("abs_fname") or ""
                     alt = img_match.group("alt") or fname
                     img_path = _resolve_media_path(vol_ref, fname)
                     if img_path is not None:
@@ -562,6 +562,7 @@ def get_chapter_proofread_data(
         "chapter_index": int(row["chapter_index"]),
         "title": str(row["title"] or ""),
         "raw_text": raw_text,
+        "source_html": str(row["source_html"] or "") if "source_html" in row.keys() else "",
         "masked_raw_text": row["masked_raw_text"],
         "translated_text": str(row["translated_text"] or ""),
         "status": str(row["status"]),

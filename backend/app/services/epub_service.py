@@ -126,6 +126,7 @@ class ParsedChapter:
     chapter_index: int
     title: str
     raw_text: str
+    source_html: str = ""
 
 
 def _extract_single_ruby(ruby_tag: Tag) -> tuple[str, str]:
@@ -383,28 +384,234 @@ def html_to_clean_text(
     return doc_title, full_text
 
 
+_SAFE_READER_TAGS: frozenset[str] = frozenset(
+    {
+        "p",
+        "div",
+        "section",
+        "article",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "br",
+        "hr",
+        "blockquote",
+        "strong",
+        "b",
+        "em",
+        "i",
+        "u",
+        "s",
+        "del",
+        "sub",
+        "sup",
+        "span",
+        "ruby",
+        "rb",
+        "rt",
+        "rp",
+        "rtc",
+        "ul",
+        "ol",
+        "li",
+        "dl",
+        "dt",
+        "dd",
+        "table",
+        "thead",
+        "tbody",
+        "tfoot",
+        "tr",
+        "th",
+        "td",
+        "figure",
+        "figcaption",
+        "img",
+        "pre",
+        "code",
+    }
+)
+
+_DANGEROUS_READER_TAGS: tuple[str, ...] = (
+    "script",
+    "style",
+    "iframe",
+    "object",
+    "embed",
+    "form",
+    "input",
+    "button",
+    "textarea",
+    "select",
+    "noscript",
+    "link",
+    "meta",
+    "head",
+)
+
+
+def html_to_sanitized_reader_html(
+    html_bytes: bytes | str,
+    *,
+    image_href_resolver: Callable[[str], tuple[str, str] | None] | None = None,
+) -> str:
+    """Produce clean, XSS-safe reader HTML preserving <ruby>, headings, emphasis, quotes, breaks, and images/ paths."""
+    try:
+        soup = BeautifulSoup(html_bytes, "lxml")
+    except Exception:
+        soup = BeautifulSoup(html_bytes, "html.parser")
+
+    body = soup.body if soup.body is not None else soup
+
+    # Replace illustration tags (<img>, <image>, <svg:image>) with clean <figure><img src="images/..." /></figure>
+    for img_tag in list(body.find_all(["img", "image", "svg:image"])):
+        href = _extract_img_href(img_tag)
+        resolved = image_href_resolver(href) if (href and image_href_resolver is not None) else None
+        parent_svg = img_tag.find_parent("svg")
+        if resolved is None:
+            if parent_svg is None:
+                img_tag.decompose()
+            continue
+        rel_src, fname = resolved
+        alt_text = str(img_tag.get("alt") or fname).strip() or fname
+        fig = soup.new_tag("figure")
+        fig["class"] = "epub-figure"
+        new_img = soup.new_tag("img")
+        new_img["src"] = rel_src
+        new_img["alt"] = alt_text
+        fig.append(new_img)
+        if parent_svg is not None and not parent_svg.get_text(strip=True):
+            parent_svg.replace_with(fig)
+        else:
+            img_tag.replace_with(fig)
+
+    # Strip dangerous & non-content tags including leftover <svg>
+    for junk in body.find_all([*_DANGEROUS_READER_TAGS, "svg"]):
+        junk.decompose()
+
+    # Walk tags bottom-up: unwrap disallowed tags, sanitize attributes on allowed tags
+    for tag in list(reversed(body.find_all(True))):
+        if tag.parent is None:
+            continue
+        tname = (tag.name or "").lower()
+        if tname not in _SAFE_READER_TAGS:
+            tag.unwrap()
+            continue
+
+        # Keep only strictly safe attributes
+        clean_attrs: dict[str, Any] = {}
+        if tname == "img":
+            src = str(tag.get("src") or "").strip()
+            if not (src.startswith("images/") or src.startswith("/api/media/")):
+                tag.decompose()
+                continue
+            clean_attrs["src"] = src
+            alt = str(tag.get("alt") or "").strip()
+            if alt:
+                clean_attrs["alt"] = alt
+        elif tname in ("td", "th"):
+            for span_attr in ("colspan", "rowspan"):
+                val = str(tag.get(span_attr) or "").strip()
+                if val.isdigit():
+                    clean_attrs[span_attr] = val
+        elif tname == "figure":
+            cls_val = tag.get("class")
+            if cls_val and ("epub-figure" in cls_val or cls_val == "epub-figure"):
+                clean_attrs["class"] = "epub-figure"
+
+        tag.attrs = clean_attrs
+
+    return "".join(str(child) for child in body.contents).strip()
+
+
 def _build_toc_title_map(book: epub.EpubBook) -> dict[str, str]:
-    """Map EPUB document hrefs (without fragment) to TOC labels."""
+    """Map EPUB document hrefs (without fragment) to TOC/nav labels, prioritizing EPUB TOC & EPUB3 nav."""
     mapping: dict[str, str] = {}
+
+    def _register(raw_href: str, raw_title: str, base_dir: str = "") -> None:
+        title = " ".join((raw_title or "").split()).strip()
+        href_clean = (raw_href or "").split("#")[0].split("?")[0].replace("\\", "/").strip()
+        if not href_clean or not title:
+            return
+        joined = posixpath.normpath(posixpath.join(base_dir, href_clean)).lstrip("./")
+        if joined and joined not in mapping:
+            mapping[joined] = title
+        low = joined.lower()
+        if low and low not in mapping:
+            mapping[low] = title
+        bname = Path(joined).name
+        if bname and bname not in mapping:
+            mapping[bname] = title
+        if bname.lower() and bname.lower() not in mapping:
+            mapping[bname.lower()] = title
 
     def _walk(items: Any) -> None:
         if not items:
             return
         for item in items:
             if isinstance(item, epub.Link):
-                href = (item.href or "").split("#")[0].lstrip("./")
-                if href and item.title and href not in mapping:
-                    mapping[href] = item.title.strip()
+                _register(item.href or "", item.title or "")
             elif isinstance(item, tuple) and len(item) == 2:
                 section, children = item
-                if isinstance(section, epub.Section) and section.href and section.title:
-                    href = section.href.split("#")[0].lstrip("./")
-                    if href and href not in mapping:
-                        mapping[href] = section.title.strip()
+                if isinstance(section, epub.Section) and getattr(section, "href", None):
+                    _register(section.href or "", section.title or "")
                 _walk(children)
+            elif isinstance(item, (list, tuple)):
+                _walk(item)
 
     _walk(book.toc)
+
+    # Also inspect EPUB3 navigation documents (<nav epub:type="toc">) for richer/missing TOC labels
+    for nav_item in book.get_items_of_type(ebooklib.ITEM_NAVIGATION):
+        try:
+            nav_name = (nav_item.get_name() or "").replace("\\", "/").lstrip("./")
+            nav_dir = posixpath.dirname(nav_name)
+            soup = BeautifulSoup(nav_item.get_content(), "lxml")
+            toc_nav = soup.find("nav", attrs={"epub:type": re.compile(r"\btoc\b", re.I)}) or soup.find("nav")
+            container = toc_nav if toc_nav is not None else soup
+            for anchor in container.find_all("a", href=True):
+                _register(str(anchor.get("href") or ""), anchor.get_text(" ", strip=True), base_dir=nav_dir)
+        except Exception:
+            continue
+
     return mapping
+
+
+def _find_epub_cover_image(book: epub.EpubBook) -> tuple[str, bytes] | None:
+    """Locate an explicit EPUB cover image via ITEM_COVER, OPF metadata, or EPUB3 cover-image property."""
+    # 1. Explicit ebooklib ITEM_COVER
+    for item in book.get_items_of_type(ebooklib.ITEM_COVER):
+        data = item.get_content() or b""
+        if detect_image_ext(data):
+            return (item.get_name() or "cover.jpg"), data
+
+    # 2. EPUB3 properties="cover-image"
+    for item in book.get_items():
+        props = getattr(item, "properties", None) or []
+        if isinstance(props, str):
+            props = props.split()
+        if "cover-image" in props:
+            data = item.get_content() or b""
+            if detect_image_ext(data):
+                return (item.get_name() or "cover.jpg"), data
+
+    # 3. EPUB2 OPF <meta name="cover" content="item-id" />
+    try:
+        for _val, attrs in book.get_metadata("OPF", "cover"):
+            cover_id = (attrs or {}).get("content") or _val
+            if cover_id:
+                item = book.get_item_with_id(str(cover_id))
+                if item is not None:
+                    data = item.get_content() or b""
+                    if detect_image_ext(data):
+                        return (item.get_name() or "cover.jpg"), data
+    except Exception:
+        pass
+
+    return None
 
 
 def parse_epub_bytes(
@@ -412,8 +619,8 @@ def parse_epub_bytes(
     *,
     keep_furigana: bool = True,
     volume_id: int | None = None,
-) -> list[tuple[str, str]]:
-    """Read an EPUB strictly in spine order, extracting illustrations when volume_id is provided."""
+) -> list[tuple[str, str, str]]:
+    """Read an EPUB strictly in spine order, extracting illustrations (relative images/ paths) and clean reader HTML."""
     # ebooklib.epub.read_epub requires a filesystem path
     with tempfile.NamedTemporaryFile(suffix=".epub", delete=False) as tmp:
         tmp.write(file_bytes)
@@ -428,7 +635,7 @@ def parse_epub_bytes(
     epub_images_by_path: dict[str, tuple[str, bytes]] = {}
     epub_images_by_name: dict[str, tuple[str, bytes]] = {}
     for res in book.get_items():
-        if res.get_type() == ebooklib.ITEM_IMAGE or (res.media_type or "").startswith("image/"):
+        if res.get_type() in (ebooklib.ITEM_IMAGE, ebooklib.ITEM_COVER) or (res.media_type or "").startswith("image/"):
             res_name = (res.get_name() or "").replace("\\", "/").lstrip("./")
             data = res.get_content() or b""
             ext = detect_image_ext(data)
@@ -444,8 +651,21 @@ def parse_epub_bytes(
         media_dir = get_volume_media_dir(volume_id)
         media_dir.mkdir(parents=True, exist_ok=True)
 
+    def _save_image_bytes(orig_name: str, img_bytes: bytes) -> str | None:
+        if volume_id is None or media_dir is None:
+            return None
+        ext = detect_image_ext(img_bytes)
+        if not ext:
+            return None
+        digest = hashlib.sha256(img_bytes).hexdigest()
+        if digest not in saved_cache:
+            safe_fname = _sanitize_media_filename(orig_name, ext, img_bytes)
+            (media_dir / safe_fname).write_bytes(img_bytes)
+            saved_cache[digest] = safe_fname
+        return saved_cache[digest]
+
     toc_titles = _build_toc_title_map(book)
-    sections: list[tuple[str, str]] = []
+    sections: list[tuple[str, str, str]] = []
 
     for spine_entry in book.spine:
         idref = spine_entry[0] if isinstance(spine_entry, tuple) else str(spine_entry)
@@ -456,7 +676,7 @@ def parse_epub_bytes(
         item_name = (item.get_name() or "").replace("\\", "/").lstrip("./")
         doc_dir = posixpath.dirname(item_name)
 
-        def _resolve_image(href: str) -> str | None:
+        def _resolve_image_rel(href: str) -> tuple[str, str] | None:
             if volume_id is None or media_dir is None:
                 return None
             clean_href = href.split("#")[0].split("?")[0].replace("\\", "/")
@@ -467,29 +687,57 @@ def parse_epub_bytes(
             if found is None:
                 return None
             orig_name, img_bytes = found
-            ext = detect_image_ext(img_bytes)
-            if not ext:
+            fname = _save_image_bytes(orig_name, img_bytes)
+            if not fname:
                 return None
-            digest = hashlib.sha256(img_bytes).hexdigest()
-            if digest not in saved_cache:
-                safe_fname = _sanitize_media_filename(orig_name, ext, img_bytes)
-                (media_dir / safe_fname).write_bytes(img_bytes)
-                saved_cache[digest] = safe_fname
-            fname = saved_cache[digest]
-            return f"![image:{fname}](/api/media/vol_{volume_id}/{fname})"
+            return f"images/{fname}", fname
+
+        def _resolve_image_md(href: str) -> str | None:
+            res = _resolve_image_rel(href)
+            if res is None:
+                return None
+            rel_path, fname = res
+            return f"![image:{fname}]({rel_path})"
 
         raw_content = item.get_content()
         html_title, clean_text = html_to_clean_text(
             raw_content,
             keep_furigana=keep_furigana,
-            image_resolver=_resolve_image if volume_id is not None else None,
+            image_resolver=_resolve_image_md if volume_id is not None else None,
         )
         if not clean_text or len(clean_text.strip()) < 2:
             continue
 
-        toc_title = toc_titles.get(item_name) or toc_titles.get(Path(item_name).name)
+        reader_html = html_to_sanitized_reader_html(
+            raw_content,
+            image_href_resolver=_resolve_image_rel if volume_id is not None else None,
+        )
+
+        toc_title = (
+            toc_titles.get(item_name)
+            or toc_titles.get(item_name.lower())
+            or toc_titles.get(Path(item_name).name)
+            or toc_titles.get(Path(item_name).name.lower())
+        )
         title = toc_title or html_title or f"Chương {len(sections) + 1}"
-        sections.append((title, clean_text))
+        sections.append((title, clean_text, reader_html))
+
+    # Extract explicit book cover image if present and not already emitted in spine documents
+    if volume_id is not None:
+        cover_found = _find_epub_cover_image(book)
+        if cover_found is not None:
+            cover_name, cover_bytes = cover_found
+            cover_digest = hashlib.sha256(cover_bytes).hexdigest()
+            if cover_digest not in saved_cache:
+                if media_dir is None:
+                    media_dir = get_volume_media_dir(volume_id)
+                    media_dir.mkdir(parents=True, exist_ok=True)
+                cover_fname = _save_image_bytes(cover_name, cover_bytes)
+                if cover_fname:
+                    rel_src = f"images/{cover_fname}"
+                    cover_md = f"![image:{cover_fname}]({rel_src})"
+                    cover_html = f'<figure class="epub-figure"><img src="{rel_src}" alt="Bìa sách" /></figure>'
+                    sections.insert(0, ("Bìa sách", cover_md, cover_html))
 
     return sections
 
@@ -687,30 +935,33 @@ def parse_uploaded_book(
     """Parse an uploaded .epub, .txt, or .docx file into ParsedChapter records."""
     ext = Path(filename).suffix.lower()
     if ext == ".epub":
-        sections = parse_epub_bytes(
+        epub_sections = parse_epub_bytes(
             file_bytes, keep_furigana=keep_furigana, volume_id=volume_id
         )
+        sections_with_html: list[tuple[str, str, str]] = epub_sections
     elif ext == ".txt":
-        sections = parse_txt_bytes(file_bytes)
+        sections_with_html = [(t, txt, "") for t, txt in parse_txt_bytes(file_bytes)]
     elif ext == ".docx":
-        sections = parse_docx_bytes(file_bytes)
+        sections_with_html = [(t, txt, "") for t, txt in parse_docx_bytes(file_bytes)]
     else:
         raise ValueError(f"Định dạng '{ext}' không được hỗ trợ. Chỉ chấp nhận .epub, .txt hoặc .docx.")
 
-    if not sections:
+    if not sections_with_html:
         raise ValueError("Không trích xuất được nội dung văn bản nào từ tệp tải lên.")
 
     if split_mode == "chunk_chars":
-        return split_sections_to_chunks(sections, chunk_min=chunk_min, chunk_max=chunk_max)
+        plain_sections = [(t, txt) for t, txt, _html in sections_with_html]
+        return split_sections_to_chunks(plain_sections, chunk_min=chunk_min, chunk_max=chunk_max)
 
-    # Default: preserve original chapter structure
+    # Default: preserve original chapter structure + sanitized source_html
     return [
         ParsedChapter(
             chapter_index=idx,
             title=title[:200],
             raw_text=raw_text,
+            source_html=src_html,
         )
-        for idx, (title, raw_text) in enumerate(sections, start=1)
+        for idx, (title, raw_text, src_html) in enumerate(sections_with_html, start=1)
     ]
 
 
@@ -773,10 +1024,10 @@ def import_book_to_volume(
             total_chars += len(ch.raw_text)
             cur = conn.execute(
                 """
-                INSERT INTO chapters (volume_id, chapter_index, title, raw_text, status)
-                VALUES (?, ?, ?, ?, 'pending')
+                INSERT INTO chapters (volume_id, chapter_index, title, raw_text, source_html, status)
+                VALUES (?, ?, ?, ?, ?, 'pending')
                 """,
-                (volume_id, ch_idx, ch.title, ch.raw_text),
+                (volume_id, ch_idx, ch.title, ch.raw_text, ch.source_html),
             )
             saved_chapters.append(
                 {
@@ -947,6 +1198,7 @@ def update_chapter_metadata(
             raise ValueError("Nội dung văn bản gốc không được để trống.")
         updates.append("raw_text = ?")
         params.append(cleaned)
+        updates.append("source_html = ''")
 
     with db_session(db_path) as conn:
         existing = conn.execute(
@@ -1029,6 +1281,10 @@ def merge_chapter_with_next(
         if curr_mask or nxt_mask:
             merged_mask = f"{curr_mask or str(curr['raw_text']).rstrip()}\n\n{nxt_mask or str(nxt['raw_text']).lstrip()}"
 
+        curr_html = str(curr["source_html"] or "").strip() if "source_html" in curr.keys() else ""
+        nxt_html = str(nxt["source_html"] or "").strip() if "source_html" in nxt.keys() else ""
+        merged_html = "\n<hr />\n".join(h for h in (curr_html, nxt_html) if h) if (curr_html and nxt_html) else ""
+
         new_ratio = round(len(merged_tr) / max(1, len(merged_raw)), 4) if merged_tr else 0.0
         new_status = "completed" if (curr["status"] == "completed" and nxt["status"] == "completed") else "pending"
 
@@ -1036,6 +1292,7 @@ def merge_chapter_with_next(
             """
             UPDATE chapters
             SET raw_text = ?,
+                source_html = ?,
                 translated_text = ?,
                 masked_raw_text = ?,
                 summary_json = NULL,
@@ -1044,7 +1301,7 @@ def merge_chapter_with_next(
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
             """,
-            (merged_raw, merged_tr, merged_mask, new_ratio, new_status, chapter_id),
+            (merged_raw, merged_html, merged_tr, merged_mask, new_ratio, new_status, chapter_id),
         )
         nxt_id = int(nxt["id"])
         conn.execute("DELETE FROM chapters WHERE id = ?", (nxt_id,))
@@ -1111,6 +1368,7 @@ def split_chapter_at_offset(
             """
             UPDATE chapters
             SET raw_text = ?,
+                source_html = '',
                 masked_raw_text = NULL,
                 summary_json = NULL,
                 updated_at = CURRENT_TIMESTAMP

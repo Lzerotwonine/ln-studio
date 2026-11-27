@@ -1,8 +1,13 @@
-import { FileSpreadsheet, Info, Upload, X } from 'lucide-react'
+import { CheckCircle2, Columns3, FileSpreadsheet, Info, Upload, X } from 'lucide-react'
 import { useRef, useState } from 'react'
-import { extractErrorMessage, importGlossaryFile } from '../lib/api'
+import {
+  extractErrorMessage,
+  importGlossaryFile,
+  previewGlossaryImport,
+} from '../lib/api'
 import type {
   GlossaryDuplicateMode,
+  GlossaryImportPreviewResponse,
   GlossaryImportResponse,
   GlossaryStatus,
   Series,
@@ -16,6 +21,22 @@ interface GlossaryImportModalProps {
   onImported: (res: GlossaryImportResponse) => void
 }
 
+const MAPPING_FIELDS: Array<{
+  key: string
+  label: string
+  required?: boolean
+}> = [
+  { key: 'source_term', label: 'Từ gốc (JP/ZH/KO)', required: true },
+  { key: 'vi_term', label: 'Bản dịch tiếng Việt' },
+  { key: 'reading', label: 'Phiên âm (Romaji/Pinyin)' },
+  { key: 'han_viet', label: 'Hán-Việt' },
+  { key: 'english_meaning', label: 'Nghĩa tiếng Anh' },
+  { key: 'term_type', label: 'Loại thuật ngữ' },
+  { key: 'status', label: 'Trạng thái' },
+  { key: 'total_freq', label: 'Tần suất' },
+  { key: 'first_seen_vol', label: 'Tập đầu' },
+]
+
 export function GlossaryImportModal({
   series,
   selectedVolume,
@@ -23,6 +44,15 @@ export function GlossaryImportModal({
   onImported,
 }: GlossaryImportModalProps) {
   const [file, setFile] = useState<File | null>(null)
+  const [preview, setPreview] = useState<GlossaryImportPreviewResponse | null>(
+    null,
+  )
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [columnMapping, setColumnMapping] = useState<
+    Record<string, number | null>
+  >({})
+  const [hasHeader, setHasHeader] = useState<boolean>(true)
+
   const [defaultStatus, setDefaultStatus] = useState<GlossaryStatus>('approved')
   const [duplicateMode, setDuplicateMode] =
     useState<GlossaryDuplicateMode>('upsert')
@@ -31,6 +61,24 @@ export function GlossaryImportModal({
   const [submitting, setSubmitting] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
+
+  const handleFileSelected = async (chosen: File | null) => {
+    setFile(chosen)
+    setPreview(null)
+    setErrorMsg(null)
+    if (!chosen) return
+    setPreviewLoading(true)
+    try {
+      const data = await previewGlossaryImport(series.id, chosen)
+      setPreview(data)
+      setColumnMapping({ ...data.suggested_mapping })
+      setHasHeader(data.has_header)
+    } catch (err) {
+      setErrorMsg(extractErrorMessage(err))
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
 
   const applyPresetStep1 = () => {
     setDefaultStatus('ignored')
@@ -52,6 +100,10 @@ export function GlossaryImportModal({
       setErrorMsg('Hãy chọn tệp .tsv hoặc .csv trước khi nhập.')
       return
     }
+    if (preview && (columnMapping.source_term === null || columnMapping.source_term === undefined)) {
+      setErrorMsg('Cần chọn ít nhất cột "Từ gốc (JP/ZH/KO)" để nhập thuật ngữ.')
+      return
+    }
     setSubmitting(true)
     setErrorMsg(null)
     try {
@@ -60,6 +112,8 @@ export function GlossaryImportModal({
         duplicate_mode: duplicateMode,
         default_first_seen_vol: Math.max(0, firstSeenVol),
         force_default_status: forceDefaultStatus,
+        column_mapping: preview ? columnMapping : undefined,
+        has_header: preview ? hasHeader : undefined,
       })
       onImported(res)
       onClose()
@@ -70,10 +124,18 @@ export function GlossaryImportModal({
     }
   }
 
+  const mappedFieldByColIdx = new Map<number, string>()
+  for (const field of MAPPING_FIELDS) {
+    const idx = columnMapping[field.key]
+    if (idx !== null && idx !== undefined) {
+      mappedFieldByColIdx.set(idx, field.label)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/55 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="w-full max-w-xl rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-2xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-200 dark:border-zinc-800 flex items-center justify-between">
+      <div className="w-full max-w-3xl max-h-[92vh] flex flex-col rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 shadow-2xl overflow-hidden">
+        <div className="shrink-0 px-6 py-4 border-b border-slate-200 dark:border-zinc-800 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
             <div>
@@ -81,8 +143,7 @@ export function GlossaryImportModal({
                 Import TSV / CSV vào Master Glossary
               </h3>
               <p className="text-xs text-slate-500 dark:text-zinc-400">
-                Bộ truyện: <strong>{series.title}</strong> — hỗ trợ đồng bộ 2
-                bước từ Excel lịch sử
+                Bộ truyện: <strong>{series.title}</strong> — tự nhận diện tiêu đề tiếng Việt & cho phép xem trước ánh xạ cột
               </p>
             </div>
           </div>
@@ -95,7 +156,7 @@ export function GlossaryImportModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 text-sm">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4 text-sm">
           {/* 2-step quick helper */}
           <div className="rounded-xl border border-indigo-200/70 dark:border-indigo-500/25 bg-indigo-50/50 dark:bg-indigo-500/10 p-3.5 space-y-2 text-xs">
             <div className="flex items-center gap-1.5 font-semibold text-indigo-800 dark:text-indigo-300">
@@ -135,7 +196,7 @@ export function GlossaryImportModal({
               ref={fileRef}
               type="file"
               accept=".tsv,.csv,.txt"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => void handleFileSelected(e.target.files?.[0] ?? null)}
               className="hidden"
             />
             <button
@@ -152,10 +213,120 @@ export function GlossaryImportModal({
                 </span>
               </div>
               <span className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 shrink-0">
-                Chọn tệp
+                {previewLoading ? 'Đang đọc cột...' : 'Chọn tệp'}
               </span>
             </button>
           </div>
+
+          {/* Column Mapping & 3-row Preview */}
+          {preview && (
+            <div className="rounded-xl border border-emerald-200/80 dark:border-emerald-500/30 bg-emerald-50/35 dark:bg-emerald-500/5 p-4 space-y-3 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 font-semibold text-emerald-800 dark:text-emerald-300">
+                  <Columns3 className="w-4 h-4" />
+                  Xác nhận ánh xạ cột ({preview.headers.length} cột · ~{preview.total_rows.toLocaleString('vi-VN')} dòng)
+                </div>
+                <label className="inline-flex items-center gap-1.5 text-slate-600 dark:text-zinc-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={hasHeader}
+                    onChange={(e) => setHasHeader(e.target.checked)}
+                    className="rounded border-slate-300 text-indigo-600"
+                  />
+                  <span>Dòng đầu tiên là tiêu đề cột</span>
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                {MAPPING_FIELDS.map((field) => {
+                  const val = columnMapping[field.key]
+                  return (
+                    <div key={field.key} className="space-y-1">
+                      <label className="flex items-center justify-between text-[11px] font-medium text-slate-600 dark:text-zinc-300">
+                        <span>
+                          {field.label}
+                          {field.required && <span className="text-rose-500 ml-0.5">*</span>}
+                        </span>
+                        {val !== null && val !== undefined && (
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        )}
+                      </label>
+                      <select
+                        aria-label={`Ánh xạ cột ${field.label}`}
+                        value={val === null || val === undefined ? '' : String(val)}
+                        onChange={(e) => {
+                          const raw = e.target.value
+                          setColumnMapping((prev) => ({
+                            ...prev,
+                            [field.key]: raw === '' ? null : Number(raw),
+                          }))
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs"
+                      >
+                        <option value="">-- Bỏ qua --</option>
+                        {preview.headers.map((h, idx) => (
+                          <option key={idx} value={idx}>
+                            #{idx + 1}: {h}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {preview.sample_rows.length > 0 && (
+                <div className="space-y-1">
+                  <div className="text-[11px] font-semibold text-slate-600 dark:text-zinc-400">
+                    Xem trước {preview.sample_rows.length} dòng mẫu:
+                  </div>
+                  <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-950">
+                    <table className="w-full text-[11px] border-collapse">
+                      <thead>
+                        <tr className="bg-slate-100 dark:bg-zinc-900 border-b border-slate-200 dark:border-zinc-800">
+                          {preview.headers.map((h, idx) => {
+                            const mappedLabel = mappedFieldByColIdx.get(idx)
+                            return (
+                              <th
+                                key={idx}
+                                className="px-2.5 py-1.5 text-left font-semibold text-slate-700 dark:text-zinc-200 whitespace-nowrap"
+                              >
+                                <div>{h}</div>
+                                {mappedLabel ? (
+                                  <div className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                                    → {mappedLabel}
+                                  </div>
+                                ) : (
+                                  <div className="text-[10px] font-normal text-slate-400">
+                                    (Bỏ qua)
+                                  </div>
+                                )}
+                              </th>
+                            )
+                          })}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-zinc-800">
+                        {preview.sample_rows.map((row, rIdx) => (
+                          <tr key={rIdx}>
+                            {row.map((cell, cIdx) => (
+                              <td
+                                key={cIdx}
+                                className="px-2.5 py-1.5 text-slate-700 dark:text-zinc-300 max-w-[180px] truncate"
+                                title={cell}
+                              >
+                                {cell || <span className="text-slate-300 dark:text-zinc-600">—</span>}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Option 1: Default status */}
           <div>
@@ -307,7 +478,7 @@ export function GlossaryImportModal({
             </button>
             <button
               type="submit"
-              disabled={!file || submitting}
+              disabled={!file || submitting || previewLoading}
               className="px-5 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 disabled:opacity-45 text-white cursor-pointer"
             >
               {submitting ? 'Đang nhập...' : 'Nhập vào Master Glossary'}

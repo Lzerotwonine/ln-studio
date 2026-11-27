@@ -2,11 +2,14 @@ import {
   Activity,
   ArrowDown,
   ArrowUp,
+  CheckCircle2,
   Cpu,
   Edit3,
   FileCode2,
+  FlaskConical,
   KeyRound,
   Plus,
+  Radar,
   RefreshCw,
   RotateCcw,
   Save,
@@ -14,6 +17,7 @@ import {
   Sparkles,
   Trash2,
   X,
+  XCircle,
 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { ReferencePacksManager } from '../components/ReferencePacksManager'
@@ -23,6 +27,7 @@ import {
   createPreset,
   deleteApiKey,
   deletePreset,
+  discoverLiveModels,
   extractErrorMessage,
   fetchApiKeys,
   fetchModelConfig,
@@ -31,6 +36,7 @@ import {
   fetchTaskModels,
   resetQuota,
   seedDefaultPresets,
+  testLiveModel,
   updateApiKey,
   updateModelConfig,
   updatePreset,
@@ -38,7 +44,9 @@ import {
 } from '../lib/api'
 import type {
   ApiKeyItem,
+  DiscoveredModelItem,
   ModelLimitItem,
+  ModelTestResponse,
   PresetSourceLang,
   PromptPreset,
   PromptPresetPayload,
@@ -61,10 +69,13 @@ type SettingsTab =
   | 'references'
 
 const SUGGESTED_MODELS = [
+  'gemini-flash-latest',
+  'gemini-flash-lite-latest',
   'gemini-2.5-flash',
   'gemini-2.5-pro',
-  'gemini-2.0-flash',
   'gemini-2.5-flash-lite',
+  'gemini-3-flash-preview',
+  'gemini-3.1-pro-preview',
 ]
 
 const QUOTA_BADGE: Record<QuotaSlotState, { label: string; cls: string }> = {
@@ -115,32 +126,39 @@ export function SettingsPage({ selectedSeries = null }: SettingsPageProps) {
   >({})
   const [newModelInput, setNewModelInput] = useState('')
   const [savingModels, setSavingModels] = useState(false)
+  const [discoveringModels, setDiscoveringModels] = useState(false)
+  const [discoveredModels, setDiscoveredModels] = useState<DiscoveredModelItem[]>([])
+  const [discoveredByKey, setDiscoveredByKey] = useState<string | null>(null)
+  const [testingModelId, setTestingModelId] = useState<string | null>(null)
+  const [modelTestResults, setModelTestResults] = useState<
+    Record<string, ModelTestResponse>
+  >({})
   const [taskModels, setTaskModels] = useState<
     Record<TaskModelKey, TaskModelAssignment>
   >({
     glossary_translate: {
-      primary: 'gemini-2.5-flash',
-      fallbacks: ['gemini-2.0-flash'],
+      primary: 'gemini-flash-latest',
+      fallbacks: ['gemini-flash-lite-latest', 'gemini-2.5-flash'],
     },
     continuity_map: {
-      primary: 'gemini-2.5-flash-lite',
-      fallbacks: ['gemini-2.5-flash'],
+      primary: 'gemini-flash-lite-latest',
+      fallbacks: ['gemini-flash-latest', 'gemini-2.5-flash-lite'],
     },
     continuity_reduce: {
-      primary: 'gemini-2.5-flash',
-      fallbacks: ['gemini-2.5-pro'],
+      primary: 'gemini-flash-latest',
+      fallbacks: ['gemini-2.5-pro', 'gemini-2.5-flash'],
     },
     translate_main: {
       primary: 'gemini-2.5-pro',
-      fallbacks: ['gemini-2.5-flash'],
+      fallbacks: ['gemini-flash-latest', 'gemini-2.5-flash'],
     },
     sensitive_scan: {
-      primary: 'gemini-2.5-flash-lite',
-      fallbacks: ['gemini-2.5-flash'],
+      primary: 'gemini-flash-lite-latest',
+      fallbacks: ['gemini-flash-latest'],
     },
     proofread_retranslate: {
-      primary: 'gemini-2.5-flash',
-      fallbacks: ['gemini-2.5-pro'],
+      primary: 'gemini-flash-latest',
+      fallbacks: ['gemini-2.5-pro', 'gemini-2.5-flash'],
     },
   })
   const [savingTaskModels, setSavingTaskModels] = useState(false)
@@ -367,59 +385,96 @@ export function SettingsPage({ selectedSeries = null }: SettingsPageProps) {
     }
   }
 
+  const handleDiscoverModels = async () => {
+    setDiscoveringModels(true)
+    setErrorMsg(null)
+    try {
+      const res = await discoverLiveModels()
+      setDiscoveredModels(res.models)
+      setDiscoveredByKey(res.key_used)
+      notify(
+        `Đã tải ${res.models.length} model gọi được từ Gemini API (qua key ${res.key_used}).`,
+      )
+    } catch (err) {
+      setErrorMsg(extractErrorMessage(err))
+    } finally {
+      setDiscoveringModels(false)
+    }
+  }
+
+  const handleTestModel = async (modelId: string) => {
+    const trimmed = modelId.trim()
+    if (!trimmed) return
+    setTestingModelId(trimmed)
+    setErrorMsg(null)
+    try {
+      const res = await testLiveModel(trimmed)
+      setModelTestResults((prev) => ({ ...prev, [trimmed]: res }))
+      if (res.ok) {
+        notify(
+          `Model ${trimmed} hoạt động tốt (${res.latency_ms}ms qua ${res.key_used}).`,
+        )
+      }
+    } catch (err) {
+      setErrorMsg(extractErrorMessage(err))
+    } finally {
+      setTestingModelId(null)
+    }
+  }
+
   const applyTaskPreset = (preset: 'economy' | 'quality') => {
     if (preset === 'economy') {
       setTaskModels({
         translate_main: {
-          primary: 'gemini-2.5-flash',
-          fallbacks: ['gemini-2.0-flash'],
+          primary: 'gemini-flash-latest',
+          fallbacks: ['gemini-2.5-flash', 'gemini-flash-lite-latest'],
         },
         glossary_translate: {
-          primary: 'gemini-2.5-flash-lite',
-          fallbacks: ['gemini-2.5-flash'],
+          primary: 'gemini-flash-lite-latest',
+          fallbacks: ['gemini-flash-latest'],
         },
         continuity_map: {
-          primary: 'gemini-2.5-flash-lite',
-          fallbacks: ['gemini-2.0-flash'],
+          primary: 'gemini-flash-lite-latest',
+          fallbacks: ['gemini-flash-latest'],
         },
         continuity_reduce: {
-          primary: 'gemini-2.5-flash',
-          fallbacks: ['gemini-2.0-flash'],
+          primary: 'gemini-flash-latest',
+          fallbacks: ['gemini-flash-lite-latest'],
         },
         sensitive_scan: {
-          primary: 'gemini-2.5-flash-lite',
-          fallbacks: ['gemini-2.5-flash'],
+          primary: 'gemini-flash-lite-latest',
+          fallbacks: ['gemini-flash-latest'],
         },
         proofread_retranslate: {
-          primary: 'gemini-2.5-flash',
-          fallbacks: ['gemini-2.0-flash'],
+          primary: 'gemini-flash-latest',
+          fallbacks: ['gemini-2.5-flash'],
         },
       })
     } else {
       setTaskModels({
         translate_main: {
           primary: 'gemini-2.5-pro',
-          fallbacks: ['gemini-2.5-flash'],
+          fallbacks: ['gemini-flash-latest', 'gemini-2.5-flash'],
         },
         glossary_translate: {
-          primary: 'gemini-2.5-flash',
+          primary: 'gemini-flash-latest',
           fallbacks: ['gemini-2.5-pro'],
         },
         continuity_map: {
-          primary: 'gemini-2.5-flash',
-          fallbacks: ['gemini-2.5-flash-lite'],
+          primary: 'gemini-flash-latest',
+          fallbacks: ['gemini-flash-lite-latest'],
         },
         continuity_reduce: {
           primary: 'gemini-2.5-pro',
-          fallbacks: ['gemini-2.5-flash'],
+          fallbacks: ['gemini-flash-latest'],
         },
         sensitive_scan: {
-          primary: 'gemini-2.5-flash',
-          fallbacks: ['gemini-2.5-flash-lite'],
+          primary: 'gemini-flash-latest',
+          fallbacks: ['gemini-flash-lite-latest'],
         },
         proofread_retranslate: {
           primary: 'gemini-2.5-pro',
-          fallbacks: ['gemini-2.5-flash'],
+          fallbacks: ['gemini-flash-latest'],
         },
       })
     }
@@ -731,7 +786,7 @@ export function SettingsPage({ selectedSeries = null }: SettingsPageProps) {
             </button>
           </div>
 
-          {/* Add model bar */}
+          {/* Add model bar + Live API Discover */}
           <div className="flex flex-wrap gap-2">
             <input
               type="text"
@@ -743,20 +798,64 @@ export function SettingsPage({ selectedSeries = null }: SettingsPageProps) {
                   handleAddModel()
                 }
               }}
-              placeholder="Nhập mã model (VD: gemini-2.5-flash)..."
-              className="flex-1 min-w-[220px] px-3.5 py-2 text-sm rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950 font-mono"
+              placeholder="Gõ tự do mã model bất kỳ (VD: gemini-flash-latest, gemini-3.1-pro-preview, gemini-4-...)..."
+              className="flex-1 min-w-[240px] px-3.5 py-2 text-sm rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950 font-mono"
             />
             <button
               type="button"
               onClick={() => handleAddModel()}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium border border-slate-200 dark:border-zinc-700 hover:bg-slate-50 dark:hover:bg-zinc-800 cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-medium border border-slate-200 dark:border-zinc-700 hover:bg-slate-50 dark:hover:bg-zinc-800 cursor-pointer"
             >
               <Plus className="w-4 h-4" /> Thêm model
             </button>
+            <button
+              type="button"
+              disabled={!newModelInput.trim() || testingModelId === newModelInput.trim()}
+              onClick={() => void handleTestModel(newModelInput.trim())}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-medium border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50/70 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 disabled:opacity-45 cursor-pointer"
+            >
+              <FlaskConical className="w-3.5 h-3.5" />
+              {testingModelId === newModelInput.trim() ? 'Đang thử...' : 'Thử gọi model'}
+            </button>
+            <button
+              type="button"
+              disabled={discoveringModels}
+              onClick={() => void handleDiscoverModels()}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border border-indigo-200 dark:border-indigo-500/30 bg-indigo-50/70 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 disabled:opacity-50 cursor-pointer"
+            >
+              <Radar className={`w-3.5 h-3.5 ${discoveringModels ? 'animate-spin' : ''}`} />
+              {discoveringModels ? 'Đang quét API...' : 'Tải danh sách model từ API'}
+            </button>
           </div>
 
+          {newModelInput.trim() && modelTestResults[newModelInput.trim()] && (
+            <div
+              className={`px-3 py-2 rounded-xl text-xs flex items-center gap-2 ${
+                modelTestResults[newModelInput.trim()].ok
+                  ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30'
+                  : 'bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-500/30'
+              }`}
+            >
+              {modelTestResults[newModelInput.trim()].ok ? (
+                <>
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>
+                    <strong>{newModelInput.trim()}</strong> hoạt động tốt ({modelTestResults[newModelInput.trim()].latency_ms}ms · phản hồi: &ldquo;{modelTestResults[newModelInput.trim()].reply_preview}&rdquo;)
+                  </span>
+                </>
+              ) : (
+                <>
+                  <XCircle className="w-4 h-4 shrink-0" />
+                  <span className="break-all">
+                    <strong>{newModelInput.trim()}</strong> lỗi: {modelTestResults[newModelInput.trim()].error}
+                  </span>
+                </>
+              )}
+            </div>
+          )}
+
           <div className="flex flex-wrap items-center gap-1.5 text-xs">
-            <span className="text-slate-500 dark:text-zinc-400">Gợi ý:</span>
+            <span className="text-slate-500 dark:text-zinc-400">Đề xuất:</span>
             {SUGGESTED_MODELS.map((m) => (
               <button
                 key={m}
@@ -769,6 +868,75 @@ export function SettingsPage({ selectedSeries = null }: SettingsPageProps) {
             ))}
           </div>
 
+          {/* Live Discovered Models from API */}
+          {discoveredModels.length > 0 && (
+            <div className="rounded-xl border border-indigo-200/80 dark:border-indigo-500/30 bg-indigo-50/35 dark:bg-indigo-500/5 p-4 space-y-2.5">
+              <div className="flex items-center justify-between text-xs">
+                <div className="font-semibold text-indigo-800 dark:text-indigo-300">
+                  Model thực tế khả dụng qua API ({discoveredModels.length} model · key {discoveredByKey})
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDiscoveredModels([])}
+                  className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  Ẩn
+                </button>
+              </div>
+              <div className="max-h-52 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {discoveredModels.map((dm) => {
+                  const tRes = modelTestResults[dm.id]
+                  const isAdded = models.includes(dm.id)
+                  return (
+                    <div
+                      key={dm.id}
+                      className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs"
+                    >
+                      <div className="min-w-0">
+                        <div className="font-mono font-semibold text-slate-900 dark:text-zinc-100 truncate">
+                          {dm.id}
+                        </div>
+                        <div className="text-[10px] text-slate-500 dark:text-zinc-400 truncate">
+                          {dm.display_name}
+                          {dm.input_token_limit
+                            ? ` · in ${(dm.input_token_limit / 1000).toFixed(0)}k`
+                            : ''}
+                          {tRes && (
+                            <span
+                              className={`ml-1.5 font-semibold ${
+                                tRes.ok ? 'text-emerald-600' : 'text-rose-600'
+                              }`}
+                            >
+                              {tRes.ok ? `✓ ${tRes.latency_ms}ms` : '✗ Lỗi'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          disabled={testingModelId === dm.id}
+                          onClick={() => void handleTestModel(dm.id)}
+                          className="px-2 py-1 rounded-md border border-slate-200 dark:border-zinc-700 hover:bg-slate-50 dark:hover:bg-zinc-800 text-[11px] cursor-pointer"
+                        >
+                          {testingModelId === dm.id ? '...' : 'Thử'}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isAdded}
+                          onClick={() => handleAddModel(dm.id)}
+                          className="px-2 py-1 rounded-md bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-[11px] font-medium cursor-pointer"
+                        >
+                          {isAdded ? 'Đã có' : '+ Thêm'}
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Priority list */}
           <div className="divide-y divide-slate-100 dark:divide-zinc-800 border border-slate-200 dark:border-zinc-800 rounded-xl overflow-hidden">
             {models.length === 0 ? (
@@ -779,21 +947,53 @@ export function SettingsPage({ selectedSeries = null }: SettingsPageProps) {
               models.map((modelId, idx) => {
                 const limit = modelLimits[modelId] ??
                   modelLimits.default ?? { rpm: 10, rpd: 250 }
+                const probe = modelTestResults[modelId]
                 return (
                   <div
                     key={modelId}
                     className="p-3.5 flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-zinc-900"
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-2.5">
                       <span className="w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 text-xs font-bold flex items-center justify-center">
                         #{idx + 1}
                       </span>
                       <span className="font-mono text-sm font-semibold text-slate-900 dark:text-zinc-100">
                         {modelId}
                       </span>
+                      {probe && (
+                        <span
+                          title={probe.error ?? probe.reply_preview}
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                            probe.ok
+                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
+                              : 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300 max-w-[260px] truncate'
+                          }`}
+                        >
+                          {probe.ok ? (
+                            <>
+                              <CheckCircle2 className="w-3 h-3 shrink-0" />
+                              OK · {probe.latency_ms}ms
+                            </>
+                          ) : (
+                            <>
+                              <XCircle className="w-3 h-3 shrink-0" />
+                              Lỗi: {probe.error}
+                            </>
+                          )}
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        disabled={testingModelId === modelId}
+                        onClick={() => void handleTestModel(modelId)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-zinc-700 hover:bg-slate-50 dark:hover:bg-zinc-800 text-xs font-medium cursor-pointer disabled:opacity-50"
+                      >
+                        <FlaskConical className="w-3.5 h-3.5 text-emerald-600" />
+                        {testingModelId === modelId ? 'Đang thử...' : 'Thử gọi'}
+                      </button>
                       <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-zinc-400">
                         RPM
                         <input
@@ -902,20 +1102,24 @@ export function SettingsPage({ selectedSeries = null }: SettingsPageProps) {
             </div>
           </div>
 
+          <datalist id="ln-model-choices-datalist">
+            {Array.from(
+              new Set([
+                ...models,
+                ...SUGGESTED_MODELS,
+                ...discoveredModels.map((m) => m.id),
+              ]),
+            ).map((m) => (
+              <option key={m} value={m} />
+            ))}
+          </datalist>
+
           <div className="divide-y divide-slate-100 dark:divide-zinc-800 border border-slate-200 dark:border-zinc-800 rounded-xl overflow-hidden">
             {TASK_MODEL_META.map((meta) => {
               const cfg = taskModels[meta.key] ?? {
-                primary: 'gemini-2.5-flash',
+                primary: 'gemini-flash-latest',
                 fallbacks: [],
               }
-              const modelChoices = Array.from(
-                new Set([
-                  ...models,
-                  ...SUGGESTED_MODELS,
-                  cfg.primary,
-                  ...cfg.fallbacks,
-                ]),
-              )
               return (
                 <div
                   key={meta.key}
@@ -935,9 +1139,11 @@ export function SettingsPage({ selectedSeries = null }: SettingsPageProps) {
 
                   <div className="lg:col-span-3">
                     <label className="block text-[10px] font-semibold uppercase text-slate-400 mb-1">
-                      Model ưu tiên
+                      Model ưu tiên (chọn hoặc gõ tự do)
                     </label>
-                    <select
+                    <input
+                      type="text"
+                      list="ln-model-choices-datalist"
                       aria-label={`Model ưu tiên cho ${meta.key}`}
                       value={cfg.primary}
                       onChange={(e) =>
@@ -953,13 +1159,7 @@ export function SettingsPage({ selectedSeries = null }: SettingsPageProps) {
                         }))
                       }
                       className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950 font-mono text-xs"
-                    >
-                      {modelChoices.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
+                    />
                   </div>
 
                   <div className="lg:col-span-4">
@@ -981,7 +1181,7 @@ export function SettingsPage({ selectedSeries = null }: SettingsPageProps) {
                           },
                         }))
                       }
-                      placeholder="VD: gemini-2.5-flash, gemini-2.0-flash"
+                      placeholder="VD: gemini-flash-latest, gemini-2.5-flash"
                       className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950 font-mono text-xs"
                     />
                   </div>

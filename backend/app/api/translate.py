@@ -12,11 +12,17 @@ from app.models.schemas import (
     TranslateStartRequest,
     TranslateStatusResponse,
     TranslationMode,
+    WebImportTranslationRequest,
+    WebImportTranslationResponse,
+    WebPromptRequest,
+    WebPromptResponse,
 )
 from app.services.translator_service import (
     HybridOptions,
     TranslationOptions,
     build_chapter_debug_context,
+    build_chapter_web_prompt,
+    import_web_translation,
     translate_single_chapter,
     translation_job_manager,
 )
@@ -196,3 +202,51 @@ def get_chapter_debug_context(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return DebugContextResponse(**data)
+
+
+@router.post(
+    "/chapters/{chapter_id}/web-prompt",
+    response_model=WebPromptResponse,
+)
+def get_chapter_web_prompt(
+    chapter_id: int, payload: WebPromptRequest | None = None
+) -> WebPromptResponse:
+    req = payload or WebPromptRequest()
+    opts = TranslationOptions(
+        mode=req.mode,
+        hybrid_config=(
+            HybridOptions.from_json_or_dict(req.hybrid_config.model_dump())
+            if req.hybrid_config is not None
+            else None
+        ),
+        system_prompt_override=req.system_prompt_override,
+        pre_mask=req.pre_mask,
+        mature_mode=req.mature_mode,
+    )
+    try:
+        data = build_chapter_web_prompt(chapter_id, opts)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return WebPromptResponse(**data)
+
+
+@router.post(
+    "/chapters/{chapter_id}/web-import",
+    response_model=WebImportTranslationResponse,
+)
+def save_chapter_web_translation(
+    chapter_id: int, payload: WebImportTranslationRequest
+) -> WebImportTranslationResponse:
+    try:
+        res = import_web_translation(
+            chapter_id,
+            payload.translated_text,
+            protected_images=payload.protected_images,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return WebImportTranslationResponse(**res)

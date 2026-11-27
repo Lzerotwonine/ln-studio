@@ -505,6 +505,20 @@ export async function translateSelectedGlossaryTerms(
   return data
 }
 
+export async function previewGlossaryImport(
+  seriesId: number,
+  file: File,
+): Promise<import('../types').GlossaryImportPreviewResponse> {
+  const form = new FormData()
+  form.append('file', file)
+  const { data } = await http.post<
+    import('../types').GlossaryImportPreviewResponse
+  >(`/api/series/${seriesId}/glossary/import-preview`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return data
+}
+
 export async function importGlossaryFile(
   seriesId: number,
   file: File,
@@ -513,6 +527,8 @@ export async function importGlossaryFile(
     duplicate_mode?: import('../types').GlossaryDuplicateMode
     default_first_seen_vol?: number
     force_default_status?: boolean
+    column_mapping?: Record<string, number | null> | null
+    has_header?: boolean
   },
 ): Promise<GlossaryImportResponse> {
   const form = new FormData()
@@ -527,6 +543,12 @@ export async function importGlossaryFile(
     'force_default_status',
     String(options?.force_default_status ?? true),
   )
+  if (options?.column_mapping) {
+    form.append('column_mapping_json', JSON.stringify(options.column_mapping))
+  }
+  if (options?.has_header !== undefined) {
+    form.append('has_header', String(options.has_header))
+  }
   const { data } = await http.post<GlossaryImportResponse>(
     `/api/series/${seriesId}/glossary/import`,
     form,
@@ -1117,5 +1139,58 @@ export async function syncReferenceFilesDisk(): Promise<{
   const { data } = await http.post<{ inserted: number; total: number }>(
     '/api/references/sync-disk',
   )
+  return data
+}
+
+// ---------- Batch D: Model Discovery, Live Probe & Web Translation ----------
+
+export async function discoverLiveModels(
+  keyId?: number | null,
+): Promise<import('../types').ModelDiscoverResponse> {
+  const { data } = await http.post<import('../types').ModelDiscoverResponse>(
+    '/api/settings/models/discover',
+    keyId ? { key_id: keyId } : {},
+  )
+  return data
+}
+
+export async function testLiveModel(
+  model: string,
+  keyId?: number | null,
+): Promise<import('../types').ModelTestResponse> {
+  const { data } = await http.post<import('../types').ModelTestResponse>(
+    '/api/settings/models/test',
+    { model, key_id: keyId ?? null },
+  )
+  return data
+}
+
+export async function buildChapterWebPrompt(
+  chapterId: number,
+  payload?: {
+    mode?: TranslationMode
+    hybrid_config?: HybridConfig
+    system_prompt_override?: string | null
+    pre_mask?: boolean
+    mature_mode?: boolean
+  },
+): Promise<import('../types').WebPromptResponse> {
+  const { data } = await http.post<import('../types').WebPromptResponse>(
+    `/api/chapters/${chapterId}/web-prompt`,
+    payload ?? {},
+  )
+  return data
+}
+
+export async function importChapterWebTranslation(
+  chapterId: number,
+  payload: {
+    translated_text: string
+    protected_images?: string[] | null
+  },
+): Promise<import('../types').WebImportTranslationResponse> {
+  const { data } = await http.post<
+    import('../types').WebImportTranslationResponse
+  >(`/api/chapters/${chapterId}/web-import`, payload)
   return data
 }

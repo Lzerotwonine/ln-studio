@@ -8,6 +8,7 @@ import json
 import logging
 import re
 import sqlite3
+import unicodedata
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Iterable
@@ -870,86 +871,213 @@ def list_glossary_terms(
     }
 
 
-def _detect_column_map(headers: list[str]) -> dict[str, int]:
-    aliases: dict[str, set[str]] = {
-        "source_term": {
-            "source_term",
-            "source",
-            "jp",
-            "ja",
-            "zh",
-            "ko",
-            "term",
-            "original",
-            "raw",
-            "word",
-            "từ gốc",
-            "tu goc",
-        },
-        "vi_term": {
-            "vi_term",
-            "vn",
-            "vi",
-            "vietnamese",
-            "translation",
-            "bản dịch",
-            "ban dich",
-            "nghĩa việt",
-            "nghia viet",
-        },
-        "reading": {
-            "reading",
-            "romaji",
-            "pinyin",
-            "romanization",
-            "kana",
-            "furigana",
-            "phiên âm",
-            "phien am",
-        },
-        "han_viet": {"han_viet", "hanviet", "han-viet", "hán việt", "hv"},
-        "english_meaning": {
-            "english_meaning",
-            "english",
-            "en",
-            "meaning",
-            "nghĩa anh",
-            "nghia anh",
-        },
-        "term_type": {"term_type", "type", "category", "loại", "loai"},
-        "status": {"status", "trạng thái", "trang thai"},
-        "total_freq": {"total_freq", "freq", "frequency", "count", "tần suất", "tan suat"},
-        "first_seen_vol": {"first_seen_vol", "vol", "volume", "tập", "tap"},
-    }
+_HEADER_SEP_RE = re.compile(r"[-_/()\[\]:.,;]+")
+_MULTI_SPACE_RE = re.compile(r"\s+")
 
+GLOSSARY_IMPORT_FIELDS: tuple[str, ...] = (
+    "source_term",
+    "vi_term",
+    "reading",
+    "han_viet",
+    "english_meaning",
+    "term_type",
+    "status",
+    "total_freq",
+    "first_seen_vol",
+)
+
+
+def _normalize_header_name(raw_header: str) -> str:
+    """Normalize header name: strip BOM, lowercase, đ->d, NFD remove diacritics, replace separators with spaces."""
+    s = (raw_header or "").strip().lstrip("\ufeff").lower()
+    s = s.replace("đ", "d")
+    s = unicodedata.normalize("NFD", s)
+    s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+    s = _HEADER_SEP_RE.sub(" ", s)
+    return _MULTI_SPACE_RE.sub(" ", s).strip()
+
+
+def _detect_column_map(headers: list[str]) -> dict[str, int]:
+    """Map normalized TSV/CSV headers to Master Glossary fields (handles Vietnamese diacritics & real Excel labels)."""
+    # Exact normalized aliases (checked first; order prioritizes specific fields like han_viet before reading)
+    exact_aliases: list[tuple[str, set[str]]] = [
+        (
+            "han_viet",
+            {
+                "han viet",
+                "hanviet",
+                "phien am han viet",
+                "am han viet",
+                "hv",
+                "sino vietnamese",
+                "sino viet",
+            },
+        ),
+        (
+            "english_meaning",
+            {
+                "english meaning",
+                "english",
+                "en",
+                "meaning",
+                "tieng anh",
+                "nghia anh",
+                "nghia tieng anh",
+                "tieng anh goc tuong duong",
+                "tieng anh goc",
+                "nghia tieng anh goc tuong duong",
+            },
+        ),
+        (
+            "source_term",
+            {
+                "source term",
+                "source",
+                "jp",
+                "ja",
+                "zh",
+                "ko",
+                "term",
+                "original",
+                "raw",
+                "word",
+                "tu goc",
+                "tu goc tieng nhat",
+                "tu goc tieng trung",
+                "tu goc tieng han",
+                "tieng nhat",
+                "tieng trung",
+                "tieng han",
+                "thuat ngu",
+                "thuat ngu goc",
+                "tu vung",
+                "tu vung goc",
+                "goc",
+            },
+        ),
+        (
+            "vi_term",
+            {
+                "vi term",
+                "vn",
+                "vi",
+                "vietnamese",
+                "translation",
+                "dich nghia",
+                "dich",
+                "tieng viet",
+                "ban dich",
+                "ban dich viet",
+                "ban dich tieng viet",
+                "nghia viet",
+                "nghia tieng viet",
+                "nghia",
+            },
+        ),
+        (
+            "reading",
+            {
+                "reading",
+                "romaji",
+                "pinyin",
+                "romanization",
+                "kana",
+                "furigana",
+                "phien am",
+                "cach doc",
+                "phien am romaji",
+                "phien am pinyin",
+            },
+        ),
+        (
+            "term_type",
+            {
+                "term type",
+                "type",
+                "category",
+                "loai",
+                "phan loai",
+                "nhom",
+            },
+        ),
+        (
+            "status",
+            {
+                "status",
+                "trang thai",
+            },
+        ),
+        (
+            "total_freq",
+            {
+                "total freq",
+                "freq",
+                "frequency",
+                "count",
+                "tan suat",
+                "so lan",
+                "so lan xuat hien",
+            },
+        ),
+        (
+            "first_seen_vol",
+            {
+                "first seen vol",
+                "first vol",
+                "vol",
+                "volume",
+                "tap",
+                "tap dau",
+                "tap goc",
+            },
+        ),
+    ]
+
+    # Ordered substring fallbacks for verbose Excel headers like "Tiếng Anh (Gốc/Tương đương)" or "Phiên âm Hán-Việt (nếu có)"
+    phrase_fallbacks: list[tuple[str, tuple[str, ...]]] = [
+        ("han_viet", ("han viet", "hanviet")),
+        ("english_meaning", ("tieng anh", "nghia anh", "english")),
+        ("source_term", ("tu goc", "tieng nhat", "tieng trung", "tieng han", "source term")),
+        ("vi_term", ("dich nghia", "ban dich", "tieng viet", "nghia viet", "vietnamese")),
+        ("reading", ("phien am", "romaji", "pinyin", "furigana", "romanization")),
+        ("term_type", ("phan loai", "term type")),
+        ("status", ("trang thai", "status")),
+        ("total_freq", ("tan suat", "frequency")),
+        ("first_seen_vol", ("first seen", "tap dau", "tap goc")),
+    ]
+
+    norm_headers = [_normalize_header_name(h) for h in headers]
     col_map: dict[str, int] = {}
-    for idx, raw_header in enumerate(headers):
-        h = raw_header.strip().lstrip("\ufeff").lower()
-        for field, names in aliases.items():
-            if h in names and field not in col_map:
+    used_indices: set[int] = set()
+
+    # Pass 1: exact alias matches
+    for field, names in exact_aliases:
+        if field in col_map:
+            continue
+        for idx, h in enumerate(norm_headers):
+            if idx in used_indices or not h:
+                continue
+            if h in names:
                 col_map[field] = idx
+                used_indices.add(idx)
                 break
+
+    # Pass 2: phrase substring fallbacks
+    for field, phrases in phrase_fallbacks:
+        if field in col_map:
+            continue
+        for idx, h in enumerate(norm_headers):
+            if idx in used_indices or not h:
+                continue
+            if any(p in h for p in phrases):
+                col_map[field] = idx
+                used_indices.add(idx)
+                break
+
     return col_map
 
 
-def import_glossary_tabular(
-    series_id: int,
-    filename: str,
-    file_bytes: bytes,
-    *,
-    default_status: str = "approved",
-    duplicate_mode: str = "upsert",
-    default_first_seen_vol: int = 0,
-    force_default_status: bool = True,
-    db_path: Path | str | None = None,
-) -> dict[str, int]:
-    """Import TSV or CSV glossary file (including 2-step historical Excel sync) into Master DB."""
-    if default_status not in VALID_GLOSSARY_STATUSES:
-        default_status = "approved"
-    if duplicate_mode not in ("skip", "upsert"):
-        duplicate_mode = "upsert"
-    fallback_vol = max(0, int(default_first_seen_vol))
-
+def _parse_tabular_rows(filename: str, file_bytes: bytes) -> tuple[str, list[list[str]]]:
     text = decode_text_bytes(file_bytes).lstrip("\ufeff")
     if not text.strip():
         raise ValueError("Tệp TSV/CSV rỗng.")
@@ -962,17 +1090,94 @@ def import_glossary_tabular(
         delimiter = ","
 
     reader = csv.reader(io.StringIO(text), delimiter=delimiter)
-    rows = list(reader)
+    rows = [r for r in reader if r and any(c.strip() for c in r)]
     if not rows:
         raise ValueError("Tệp không có dữ liệu.")
+    return delimiter, rows
 
-    col_map = _detect_column_map(rows[0])
-    if "source_term" in col_map:
+
+def preview_glossary_tabular(filename: str, file_bytes: bytes) -> dict[str, Any]:
+    """Parse TSV/CSV header, auto-suggest column mapping, and return up to 3 sample rows for UI confirmation."""
+    delimiter, rows = _parse_tabular_rows(filename, file_bytes)
+    raw_first = rows[0]
+    detected = _detect_column_map(raw_first)
+    has_header = "source_term" in detected or len(detected) >= 2
+
+    if has_header:
+        headers = [c.strip().lstrip("\ufeff") or f"Cột {i + 1}" for i, c in enumerate(raw_first)]
+        data_rows = rows[1:]
+        col_map = detected
+    else:
+        col_count = max(len(r) for r in rows[:5])
+        headers = [f"Cột {i + 1}" for i in range(col_count)]
+        data_rows = rows
+        col_map = {
+            "source_term": 0 if col_count > 0 else None,
+            "vi_term": 1 if col_count > 1 else None,
+            "reading": 2 if col_count > 2 else None,
+            "term_type": 3 if col_count > 3 else None,
+        }
+
+    suggested_mapping: dict[str, int | None] = {
+        field: col_map.get(field) for field in GLOSSARY_IMPORT_FIELDS
+    }
+    sample_rows = [
+        [c.strip() for c in r[: len(headers)]] + [""] * max(0, len(headers) - len(r))
+        for r in data_rows[:3]
+    ]
+    return {
+        "filename": filename,
+        "delimiter": delimiter,
+        "has_header": has_header,
+        "headers": headers,
+        "suggested_mapping": suggested_mapping,
+        "sample_rows": sample_rows,
+        "total_rows": len(data_rows),
+    }
+
+
+def import_glossary_tabular(
+    series_id: int,
+    filename: str,
+    file_bytes: bytes,
+    *,
+    default_status: str = "approved",
+    duplicate_mode: str = "upsert",
+    default_first_seen_vol: int = 0,
+    force_default_status: bool = True,
+    column_mapping: dict[str, int | None] | None = None,
+    has_header: bool | None = None,
+    db_path: Path | str | None = None,
+) -> dict[str, int]:
+    """Import TSV or CSV glossary file (including 2-step historical Excel sync & custom column mapping) into Master DB."""
+    if default_status not in VALID_GLOSSARY_STATUSES:
+        default_status = "approved"
+    if duplicate_mode not in ("skip", "upsert"):
+        duplicate_mode = "upsert"
+    fallback_vol = max(0, int(default_first_seen_vol))
+
+    _delimiter, rows = _parse_tabular_rows(filename, file_bytes)
+
+    auto_map = _detect_column_map(rows[0])
+    auto_has_header = "source_term" in auto_map or len(auto_map) >= 2
+    effective_has_header = auto_has_header if has_header is None else bool(has_header)
+
+    if column_mapping is not None:
+        col_map: dict[str, int] = {}
+        for field in GLOSSARY_IMPORT_FIELDS:
+            raw_idx = column_mapping.get(field)
+            if raw_idx is not None and isinstance(raw_idx, int) and raw_idx >= 0:
+                col_map[field] = raw_idx
+        if "source_term" not in col_map:
+            raise ValueError("Cần ánh xạ ít nhất cột 'Từ gốc (source_term)' trước khi nhập.")
+        data_rows = rows[1:] if effective_has_header else rows
+    elif effective_has_header and "source_term" in auto_map:
+        col_map = auto_map
         data_rows = rows[1:]
     else:
         # Headerless fallback: col 0 = source_term, col 1 = vi_term, col 2 = reading, col 3 = term_type
         col_map = {"source_term": 0, "vi_term": 1, "reading": 2, "term_type": 3}
-        data_rows = rows
+        data_rows = rows[1:] if effective_has_header else rows
 
     def _cell(row: list[str], field: str) -> str:
         idx = col_map.get(field)

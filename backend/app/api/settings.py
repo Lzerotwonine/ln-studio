@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import sqlite3
+import time
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
+from google import genai
+from google.genai import types
 
 from app.core.database import (
     DEFAULT_MODEL_LIMITS,
@@ -21,9 +24,14 @@ from app.models.schemas import (
     ApiKeyCreate,
     ApiKeyResponse,
     ApiKeyUpdate,
+    DiscoveredModelItem,
     ModelConfigPayload,
     ModelConfigResponse,
+    ModelDiscoverRequest,
+    ModelDiscoverResponse,
     ModelLimitItem,
+    ModelTestRequest,
+    ModelTestResponse,
     QuotaResetRequest,
     QuotaResetResponse,
     QuotaSlotResponse,
@@ -35,6 +43,32 @@ from app.models.schemas import (
 )
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
+
+
+def _build_genai_client(api_key: str) -> Any:
+    """Factory wrapper around google-genai Client so unit tests can cleanly monkeypatch it."""
+    return genai.Client(api_key=api_key)
+
+
+def _pick_active_api_key(key_id: int | None = None) -> tuple[str, str]:
+    with db_session() as conn:
+        if key_id is not None:
+            row = conn.execute(
+                "SELECT name, api_key FROM api_keys WHERE id = ?",
+                (key_id,),
+            ).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Không tìm thấy API Key được chỉ định.")
+            return str(row["name"]), str(row["api_key"])
+        row = conn.execute(
+            "SELECT name, api_key FROM api_keys WHERE is_active = 1 ORDER BY id ASC LIMIT 1"
+        ).fetchone()
+        if row is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Chưa có API Key nào đang bật. Hãy thêm hoặc bật ít nhất 1 API Key trước.",
+            )
+        return str(row["name"]), str(row["api_key"])
 
 
 def _mask_api_key(raw_key: str) -> str:
@@ -184,6 +218,126 @@ def update_models_config(payload: ModelConfigPayload) -> ModelConfigResponse:
             set_setting(conn, "model_limits", serialized_limits)
 
     return get_models_config()
+
+
+@router.post("/models/discover", response_model=ModelDiscoverResponse)
+def discover_live_models(
+    payload: ModelDiscoverRequest | None = None,
+) -> ModelDiscoverResponse:
+    """Query Google Gemini API (client.models.list()) using an active API key to discover callable text models."""
+    key_name, raw_key = _pick_active_api_key(payload.key_id if payload else None)
+    try:
+        client = _build_genai_client(raw_key)
+        raw_iter = client.models.list()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Không thể tải danh sách model từ Gemini API ({key_name}): {exc}",
+        )
+
+    discovered: list[DiscoveredModelItem] = []
+    seen: set[str] = set()
+    skip_markers = (
+        "embedding",
+        "imagen",
+        "veo",
+        "aqa",
+        "tts",
+        "audio",
+        "robotics",
+        "computer-use",
+        "deep-research",
+    )
+
+    try:
+        for item in raw_iter:
+            raw_name = str(getattr(item, "name", "") or "").strip()
+            if not raw_name:
+                continue
+            model_id = raw_name.removeprefix("models/").strip()
+            lower_id = model_id.lower()
+            if not lower_id.startswith("gemini-"):
+                continue
+            if any(m in lower_id for m in skip_markers):
+                continue
+
+            actions = getattr(item, "supported_actions", None) or getattr(
+                item, "supported_generation_methods", None
+            )
+            if actions is not None:
+                action_strs = {str(a) for a in actions}
+                if "generateContent" not in action_strs:
+                    continue
+
+            if model_id in seen:
+                continue
+            seen.add(model_id)
+            discovered.append(
+                DiscoveredModelItem(
+                    id=model_id,
+                    display_name=str(getattr(item, "display_name", "") or model_id),
+                    description=str(getattr(item, "description", "") or "")[:240],
+                    input_token_limit=getattr(item, "input_token_limit", None),
+                    output_token_limit=getattr(item, "output_token_limit", None),
+                )
+            )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Lỗi khi đọc danh sách model từ Gemini API ({key_name}): {exc}",
+        )
+
+    # Sort newest/latest aliases first for convenient browsing
+    def _sort_key(m: DiscoveredModelItem) -> tuple[int, str]:
+        mid = m.id.lower()
+        if "latest" in mid:
+            return (0, mid)
+        if mid.startswith("gemini-3") or mid.startswith("gemini-4"):
+            return (1, mid)
+        if mid.startswith("gemini-2.5"):
+            return (2, mid)
+        return (3, mid)
+
+    discovered.sort(key=_sort_key)
+    return ModelDiscoverResponse(key_used=key_name, models=discovered)
+
+
+@router.post("/models/test", response_model=ModelTestResponse)
+def test_live_model(payload: ModelTestRequest) -> ModelTestResponse:
+    """Send a minimal probe request to verify whether a model is callable with the active API key."""
+    model_id = payload.model.strip()
+    if not model_id:
+        raise HTTPException(status_code=422, detail="Mã model không được để trống.")
+    key_name, raw_key = _pick_active_api_key(payload.key_id)
+
+    t0 = time.perf_counter()
+    try:
+        client = _build_genai_client(raw_key)
+        resp = client.models.generate_content(
+            model=model_id,
+            contents="Reply with OK.",
+            config=types.GenerateContentConfig(max_output_tokens=16, temperature=0.0),
+        )
+        latency_ms = int((time.perf_counter() - t0) * 1000)
+        text = str(getattr(resp, "text", "") or "").strip()
+        return ModelTestResponse(
+            ok=True,
+            model=model_id,
+            key_used=key_name,
+            latency_ms=latency_ms,
+            reply_preview=text[:120] or "OK",
+            error=None,
+        )
+    except Exception as exc:
+        latency_ms = int((time.perf_counter() - t0) * 1000)
+        return ModelTestResponse(
+            ok=False,
+            model=model_id,
+            key_used=key_name,
+            latency_ms=latency_ms,
+            reply_preview="",
+            error=str(exc)[:300],
+        )
 
 
 # ---------- Task-based Model Routing ----------

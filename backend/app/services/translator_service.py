@@ -28,7 +28,9 @@ logger = logging.getLogger(__name__)
 PROMPTS_LN_VN_DIR = PROJECT_ROOT / "data" / "prompts" / "ln_vn"
 MIN_CHAR_RATIO = 0.30
 
-_MD_IMAGE_TAG_RE = re.compile(r"!\[[^\]]*\]\(/api/media/vol_\d+/[^/\s)]+\)")
+_MD_IMAGE_TAG_RE = re.compile(
+    r"!\[[^\]]*\]\((?:images/[^/\s)]+|/api/media/vol_\d+/[^/\s)]+)\)"
+)
 _IMAGE_MARKER_RULE = (
     "\n[QUY TẮC ẢNH MINH HỌA]: Văn bản có chứa mã giữ chỗ ảnh dạng [[IMAGE_001]], [[IMAGE_002]]... "
     "PHẢI giữ nguyên chính xác 100% từng mã giữ chỗ này ở đúng vị trí tương ứng trên dòng riêng; "
@@ -594,6 +596,118 @@ def build_chapter_debug_context(
         "matched_relationships": ctx.relevant_context["matched_relationships"],
         "matched_glossary": ctx.relevant_context["matched_glossary"],
         "ignored_shared_parts": ctx.relevant_context["ignored_shared_parts"],
+    }
+
+
+def _strip_outer_code_fence(text: str) -> str:
+    """Strip a single outer Markdown code fence if a web UI wrapped the translation in ```...```."""
+    stripped = (text or "").strip()
+    if stripped.startswith("```") and stripped.endswith("```"):
+        lines = stripped.splitlines()
+        if len(lines) >= 2 and lines[0].startswith("```") and lines[-1].strip() == "```":
+            return "\n".join(lines[1:-1]).strip()
+    return stripped
+
+
+def build_chapter_web_prompt(
+    chapter_id: int,
+    options: TranslationOptions | None = None,
+    *,
+    db_path: Path | str | None = None,
+) -> dict[str, Any]:
+    """Build a complete copy-paste translation package for Gemini Web / Google AI Studio."""
+    opts = options or TranslationOptions()
+    pre_masked_count = 0
+    if opts.pre_mask:
+        pre_res = apply_masks_to_chapter(chapter_id, save_to_db=False, db_path=db_path)
+        pre_masked_count = int(pre_res.get("applied_count", 0))
+
+    ctx = _load_chapter_context(chapter_id, db_path=db_path)
+    effective_mode = opts.mode or ctx.series_mode
+    strategy = get_translation_strategy(effective_mode)
+    built = strategy.build_prompt(ctx, opts, fiction_retry=opts.mature_mode)
+
+    combined_prompt = (
+        "=== SYSTEM INSTRUCTIONS ===\n"
+        f"{built.system_instruction}\n\n"
+        "=== INPUT TO TRANSLATE ===\n"
+        f"{built.user_prompt}\n\n"
+        "=== OUTPUT REQUIREMENT ===\n"
+        "Chỉ trả về duy nhất bản dịch tiếng Việt hoàn chỉnh cho đoạn <RAW_TEXT> ở trên, không kèm lời bình hay giải thích."
+    )
+    estimated_tokens = max(1, len(combined_prompt) // 3)
+
+    return {
+        "chapter_id": ctx.chapter_id,
+        "chapter_index": ctx.chapter_index,
+        "chapter_title": ctx.chapter_title,
+        "mode": built.mode,
+        "system_instruction": built.system_instruction,
+        "user_prompt": built.user_prompt,
+        "combined_prompt": combined_prompt,
+        "protected_images": list(ctx.protected_images),
+        "using_masked_text": ctx.using_masked_text,
+        "pre_masked_count": pre_masked_count,
+        "source_chars": len(ctx.effective_source_text),
+        "estimated_tokens": estimated_tokens,
+    }
+
+
+def import_web_translation(
+    chapter_id: int,
+    translated_text: str,
+    *,
+    protected_images: list[str] | None = None,
+    db_path: Path | str | None = None,
+) -> dict[str, Any]:
+    """Save a translation pasted from Gemini Web / AI Studio, restoring [[IMAGE_NNN]] markers and computing char_ratio."""
+    cleaned = _strip_outer_code_fence(translated_text)
+    if not cleaned:
+        raise ValueError("Bản dịch dán vào không được để trống.")
+
+    with db_session(db_path) as conn:
+        row = conn.execute(
+            "SELECT id, chapter_index, raw_text, masked_raw_text FROM chapters WHERE id = ?",
+            (chapter_id,),
+        ).fetchone()
+        if row is None:
+            raise LookupError("Không tìm thấy chương.")
+
+        raw_text = str(row["raw_text"] or "")
+        src_ref = str(row["masked_raw_text"] or raw_text)
+        chapter_index = int(row["chapter_index"])
+
+        images = (
+            list(protected_images)
+            if protected_images is not None
+            else protect_image_markers(src_ref)[1]
+        )
+        restored_text, missing_count = restore_image_markers(cleaned, images)
+        restored_count = max(0, len(images) - missing_count)
+        ratio = _compute_char_ratio(src_ref, restored_text)
+
+        conn.execute(
+            """
+            UPDATE chapters
+            SET translated_text = ?,
+                char_ratio = ?,
+                status = 'completed',
+                used_slot = 'web_manual',
+                error_message = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (restored_text, ratio, chapter_id),
+        )
+
+    return {
+        "chapter_id": chapter_id,
+        "chapter_index": chapter_index,
+        "status": "completed",
+        "char_ratio": ratio,
+        "translated_chars": len(restored_text),
+        "restored_images_count": restored_count,
+        "missing_images_count": missing_count,
     }
 
 

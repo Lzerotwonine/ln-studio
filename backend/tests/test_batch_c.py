@@ -179,7 +179,7 @@ def test_epub_image_extraction_media_api_marker_preservation_and_export_embeddin
     media_files = list(get_volume_media_dir(v_id).iterdir())
     assert len(media_files) == 1
     fname = media_files[0].name
-    expected_md = f"![image:{fname}](/api/media/vol_{v_id}/{fname})"
+    expected_md = f"![image:{fname}](images/{fname})"
 
     ch_detail = client.get(f"/api/chapters/{ch_id}").json()
     assert expected_md in ch_detail["raw_text"]
