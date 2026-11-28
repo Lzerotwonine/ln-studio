@@ -5,11 +5,15 @@ import {
   CheckCheck,
   Cpu,
   FileCode2,
+  FileStack,
+  HelpCircle,
   Image as ImageIcon,
   Languages,
+  Palette,
   ShieldAlert,
   Users,
 } from 'lucide-react'
+import { GLOSSARY_OF_TERMS } from '../data/guides'
 import type { NavSection } from '../types'
 
 interface GuidePageProps {
@@ -27,78 +31,88 @@ const WORKFLOW_STEPS: Array<{
   {
     step: '01',
     section: 'dashboard',
-    title: 'Quản lý Truyện & Kho Chương',
+    title: 'Quản lý truyện',
     icon: BookOpen,
-    summary: 'Khởi tạo bộ truyện (JA/ZH/KO), tạo Tập nhãn tự do và nhập nguồn raw.',
+    summary: 'Tạo bộ truyện mới, chọn ngôn ngữ nguồn, phong cách dịch và thêm các tập hoặc quyển.',
     details: [
-      'Nhập trực tiếp .epub / .txt / .docx; ảnh minh họa EPUB tự động trích xuất thành Markdown ![image:...](/api/media/...).',
-      'Dùng Kho Chương để dán thêm chương, đổi tên trực tiếp, tách chương tại con trỏ, gộp 2 chương kề nhau hoặc xóa lẻ.',
+      'Hỗ trợ truyện tiếng Nhật, tiếng Trung và tiếng Hàn với nhãn tập đặt tự do theo nhu cầu.',
+      'Chọn sẵn Mẫu lệnh dịch phù hợp từng thể loại hoặc tự viết hướng dẫn văn phong riêng.',
     ],
   },
   {
     step: '02',
-    section: 'glossary',
-    title: 'Master Glossary (Bảng Thuật ngữ)',
-    icon: BookMarked,
-    summary: 'Đếm từ thông minh theo ngôn ngữ, lọc riêng từng tập và đồng bộ 2 bước từ Excel.',
+    section: 'chapters',
+    title: 'Kho chương',
+    icon: FileStack,
+    summary: 'Nhập tệp sách EPUB, TXT hoặc Word và sắp xếp lại danh sách chương trước khi dịch.',
     details: [
-      'Lọc tuyệt đối theo Tập N (tần suất riêng trong tập) hoặc Toàn Series; hỗ trợ Virtual List cho >5.000 từ.',
-      'Chọn dòng kiểu Excel (Click / Shift / Ctrl / Ctrl+Shift) và áp dụng hành động hàng loạt cho toàn bộ kết quả lọc.',
+      'Với tệp EPUB, hệ thống tự động ưu tiên tên chương từ mục lục, trích xuất ảnh bìa và lưu ảnh minh họa gọn sạch.',
+      'Hỗ trợ dán thêm chương mới, đổi tên trực tiếp, tách chương dài tại vị trí con trỏ, gộp hai chương kề nhau hoặc xóa lẻ.',
     ],
   },
   {
     step: '03',
-    section: 'characters',
-    title: 'Nhân vật, Xưng hô & Continuity Pack',
-    icon: Users,
-    summary: 'Chạy MAP → REDUCE để khóa ma trận xưng hô có hướng A → B và B → A.',
+    section: 'glossary',
+    title: 'Kho thuật ngữ',
+    icon: BookMarked,
+    summary: 'Đếm từ tự động, dịch hàng loạt bằng AI và giữ đồng nhất tên riêng xuyên suốt nhiều tập.',
     details: [
-      'Bảo vệ 100% các cặp xưng hô đã khóa (Locked) từ tập trước và tự cảnh báo các cặp thiếu chiều ngược.',
-      'Tự động dựng volN_continuity_pack.xml hợp lệ 100% từ SQLite.',
+      'Lọc riêng thuật ngữ xuất hiện trong từng tập hoặc xem toàn bộ truyện, hỗ trợ danh sách hàng nghìn từ mượt mà.',
+      'Hỗ trợ nhập kho cũ từ bảng tính TSV/CSV có xem trước 3 dòng mẫu và xác nhận đúng cột Hán-Việt, Nghĩa tiếng Anh.',
     ],
   },
   {
     step: '04',
-    section: 'translate',
-    title: 'Dịch thuật Đa chế độ & R19',
-    icon: Languages,
-    summary: 'Hỗ trợ 3 chế độ (LN-VN, Dịch Tự Do, Hybrid) chạy nền với log SSE trực tiếp.',
+    section: 'characters',
+    title: 'Nhân vật và Xưng hô',
+    icon: Users,
+    summary: 'Phân tích từng chương rồi tổng hợp cả tập để khóa chặt cách xưng hô hai chiều giữa các nhân vật.',
     details: [
-      'Bật Pre-mask để tự động che từ nhạy cảm theo Kho từ nhạy cảm trước khi dịch (giữ nguyên raw gốc).',
-      'Bật Mature / R19 để dùng BLOCK_NONE kèm ngữ cảnh văn học ngay từ lần dịch đầu tiên.',
+      'Tự động giữ lại toàn bộ cặp xưng hô đã khóa từ các tập trước và cảnh báo các cặp mới thiếu chiều ngược.',
+      'Đọc ngay trích dẫn câu thoại gốc để duyệt và khóa cặp đại từ chính xác.',
     ],
   },
   {
     step: '05',
-    section: 'proofread',
-    title: 'Hiệu đính Song song & Xuất bản',
-    icon: CheckCheck,
-    summary: 'So sánh Raw – Bản dịch, bật Đọc xem trước Markdown kèm ảnh và xuất DOCX/EPUB.',
+    section: 'translate',
+    title: 'Dịch thuật',
+    icon: Languages,
+    summary: 'Dịch tự động nhiều chương qua API hoặc dùng chế độ Dịch qua Web với Gemini Web và Google AI Studio.',
     details: [
-      'Rê chuột lên từ tô sáng ở cột Raw để xem nghĩa Việt + Hán-Việt; bản dịch tự lưu sau 1,5 giây ngừng gõ.',
-      'Xuất .docx (Times New Roman / Cambria) và .epub có mục lục chuẩn và tự động nhúng ảnh minh họa thật.',
+      'Hỗ trợ Tự che từ nhạy cảm trước khi gửi AI (bản gốc vẫn giữ nguyên) và Chế độ 18+ cho nội dung trưởng thành.',
+      'Tự động bảo vệ vị trí ảnh minh họa trong lúc dịch và khôi phục chính xác khi lưu kết quả.',
+    ],
+  },
+  {
+    step: '06',
+    section: 'proofread',
+    title: 'Hiệu đính và Xuất bản',
+    icon: CheckCheck,
+    summary: 'Đối chiếu Bản gốc – Bản dịch tiếng Việt, xem trước định dạng kèm ảnh và xuất Word hoặc EPUB.',
+    details: [
+      'Cột Bản gốc có chế độ Bản đọc giống sách điện tử, giữ phiên âm trên đầu chữ và tô sáng thuật ngữ khi rê chuột.',
+      'Hỗ trợ in đậm, in nghiêng, đổi kiểu dấu ngoặc, tìm thay thế toàn tập và tự động nhúng ảnh thật vào tệp Word / EPUB.',
     ],
   },
 ]
 
 export function GuidePage({ onNavigate }: GuidePageProps) {
   return (
-    <div className="max-w-5xl mx-auto p-6 space-y-6">
+    <div className="max-w-5xl mx-auto p-4 sm:p-6 space-y-8">
       <div className="space-y-1.5">
         <div className="text-xs font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
-          LN-Studio Handbook
+          Cẩm nang sử dụng LN-Studio
         </div>
         <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-zinc-100">
-          Hướng dẫn Tổng quan Quy trình Dịch Light Novel
+          Hướng dẫn quy trình dịch truyện
         </h2>
         <p className="text-sm text-slate-500 dark:text-zinc-400">
-          Quy trình 5 bước khép kín từ nhập sách gốc đến xuất bản phẩm `.docx` /
-          `.epub` sạch đẹp, đồng nhất thuật ngữ và xưng hô xuyên suốt hàng chục
-          tập.
+          Quy trình 6 bước khép kín từ nhập sách gốc đến xuất bản tệp Word và
+          EPUB sạch đẹp, giữ đồng nhất thuật ngữ và xưng hô qua nhiều tập.
         </p>
       </div>
 
-      {/* 5-step workflow cards */}
+      {/* 6-step workflow cards */}
       <div className="space-y-3">
         {WORKFLOW_STEPS.map((item) => {
           const Icon = item.icon
@@ -108,11 +122,11 @@ export function GuidePage({ onNavigate }: GuidePageProps) {
               className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 shadow-xs flex flex-col sm:flex-row sm:items-start justify-between gap-4"
             >
               <div className="flex items-start gap-4">
-                <div className="w-11 h-11 rounded-xl bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex flex-col items-center justify-center shrink-0">
+                <div className="w-11 h-11 rounded-xl bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
                   <Icon className="w-5 h-5" />
                 </div>
                 <div className="space-y-1.5">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono text-[11px] font-bold px-2 py-0.5 rounded bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300">
                       BƯỚC {item.step}
                     </span>
@@ -120,7 +134,7 @@ export function GuidePage({ onNavigate }: GuidePageProps) {
                       {item.title}
                     </h3>
                   </div>
-                  <p className="text-xs font-medium text-slate-600 dark:text-zinc-300">
+                  <p className="text-sm text-slate-600 dark:text-zinc-300">
                     {item.summary}
                   </p>
                   <ul className="list-disc pl-4 space-y-1 text-xs text-slate-500 dark:text-zinc-400">
@@ -136,7 +150,7 @@ export function GuidePage({ onNavigate }: GuidePageProps) {
                 onClick={() => onNavigate(item.section)}
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold border border-slate-200 dark:border-zinc-700 hover:bg-indigo-50 dark:hover:bg-indigo-500/15 hover:text-indigo-700 dark:hover:text-indigo-300 shrink-0 cursor-pointer self-start"
               >
-                Mở tab
+                Mở mục này
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -148,55 +162,101 @@ export function GuidePage({ onNavigate }: GuidePageProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 space-y-2">
           <div className="flex items-center gap-2 font-bold text-sm text-slate-900 dark:text-zinc-100">
-            <Cpu className="w-4 h-4 text-indigo-500" />
-            Phân bổ Model theo 6 Tác vụ
+            <Palette className="w-4 h-4 text-amber-500" />
+            Tùy biến Giao diện hiển thị
           </div>
           <p className="text-xs text-slate-500 dark:text-zinc-400 leading-relaxed">
-            Vào <strong>Cài đặt → Model ưu tiên</strong> để gán model nhẹ
-            (Flash-Lite / Flash) cho Glossary, MAP PHASE và Quét nhạy cảm; dành
-            model mạnh (Pro) cho Dịch chương chính. Tại mỗi tab vẫn có dropdown
-            đổi nhanh model trước khi chạy.
+            Vào <strong>Cài đặt → Giao diện hiển thị</strong> để chọn màu nền
+            Giấy vàng dịu mắt, Xám dịu, Tối hoặc Đêm sâu, cùng phông chữ, cỡ chữ
+            và mật độ hiển thị thoải mái cho cả máy tính lẫn điện thoại.
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 space-y-2">
+          <div className="flex items-center gap-2 font-bold text-sm text-slate-900 dark:text-zinc-100">
+            <Cpu className="w-4 h-4 text-indigo-500" />
+            Phân bổ Model theo từng tác vụ
+          </div>
+          <p className="text-xs text-slate-500 dark:text-zinc-400 leading-relaxed">
+            Vào <strong>Cài đặt → Model ưu tiên</strong> để tải danh sách Model
+            khả dụng từ API, thử gọi trực tiếp và phân bổ Model nhẹ cho tác vụ
+            phụ, dành Model mạnh cho phần dịch chính văn.
           </p>
         </div>
 
         <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 space-y-2">
           <div className="flex items-center gap-2 font-bold text-sm text-slate-900 dark:text-zinc-100">
             <ShieldAlert className="w-4 h-4 text-rose-500" />
-            Kho từ nhạy cảm & Chế độ R19
+            Kho từ nhạy cảm và Chế độ 18+
           </div>
           <p className="text-xs text-slate-500 dark:text-zinc-400 leading-relaxed">
             Vào <strong>Cài đặt → Kho từ nhạy cảm</strong> để nạp sẵn bộ từ mẫu
-            tiếng Nhật (seed) hoặc dán hàng loạt danh sách theo định dạng{' '}
-            <code>từ gốc = từ thay thế</code>. Kết hợp Pre-mask + Mature/R19 để
-            giảm tối đa lỗi chặn bộ lọc.
+            tiếng Nhật hoặc dán hàng loạt cặp{' '}
+            <code>từ gốc = từ thay thế</code>. Kết hợp Tự che từ nhạy cảm và Chế
+            độ 18+ để giảm tối đa lỗi bị bộ lọc chặn.
           </p>
         </div>
 
         <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 space-y-2">
           <div className="flex items-center gap-2 font-bold text-sm text-slate-900 dark:text-zinc-100">
             <FileCode2 className="w-4 h-4 text-emerald-500" />
-            LN-VN Reference Packs
+            Tài liệu tham chiếu và Ảnh minh họa
           </div>
           <p className="text-xs text-slate-500 dark:text-zinc-400 leading-relaxed">
-            Quản lý các tệp tham chiếu chuyên sâu (Primer, ICL Samples, Kanji
-            DB...) trong <strong>Cài đặt → Reference Packs</strong>, chọn bật/tắt
-            riêng cho pha Tóm tắt và pha Dịch ở chế độ LN-VN.
-          </p>
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 space-y-2">
-          <div className="flex items-center gap-2 font-bold text-sm text-slate-900 dark:text-zinc-100">
-            <ImageIcon className="w-4 h-4 text-sky-500" />
-            Ảnh minh họa EPUB & GIF Hướng dẫn
-          </div>
-          <p className="text-xs text-slate-500 dark:text-zinc-400 leading-relaxed">
-            Ảnh từ EPUB được lưu tại <code>data/media/vol_&#123;id&#125;/</code>
-            , giữ nguyên qua quá trình dịch và nhúng lại vào `.docx`/`.epub`. Bạn
-            cũng có thể đặt ảnh/GIF hướng dẫn cá nhân vào{' '}
-            <code>frontend/public/guides/&#123;tab&#125;.gif</code>.
+            Quản lý các tệp quy tắc dịch trong{' '}
+            <strong>Cài đặt → Tài liệu tham chiếu</strong>. Ảnh minh họa từ sách
+            EPUB được lưu sạch dạng <code>images/...</code> và tự động nhúng lại
+            khi xuất Word hoặc EPUB.
           </p>
         </div>
       </div>
+
+      {/* Glossary of Terms & Shortcuts */}
+      <section className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 sm:p-6 space-y-4 shadow-xs">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+            <HelpCircle className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-slate-900 dark:text-zinc-100">
+              Giải thích thuật ngữ và Phím tắt
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-zinc-400">
+              Giải nghĩa nhanh các tên tệp kỹ thuật, khái niệm AI thường gặp và
+              phím tắt thao tác nhanh trong ứng dụng.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {GLOSSARY_OF_TERMS.map((entry) => (
+            <div
+              key={entry.term}
+              className="rounded-xl border border-slate-200/80 dark:border-zinc-800 bg-slate-50/70 dark:bg-zinc-950/60 p-4 space-y-1"
+            >
+              <div className="font-semibold text-sm text-slate-900 dark:text-zinc-100">
+                {entry.term}
+              </div>
+              <div className="text-xs font-medium text-indigo-600 dark:text-indigo-400">
+                {entry.meaning}
+              </div>
+              <p className="text-xs text-slate-600 dark:text-zinc-400 leading-relaxed">
+                {entry.detail}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-2 pt-2 text-xs text-slate-500 dark:text-zinc-400">
+          <ImageIcon className="w-4 h-4 text-sky-500 shrink-0" />
+          <span>
+            Mẹo: Bạn có thể đặt ảnh động hướng dẫn cá nhân vào thư mục{' '}
+            <code>frontend/public/guides/</code> theo tên từng mục (ví dụ{' '}
+            <code>chapters.gif</code>, <code>proofread.gif</code>) để hiển thị
+            ngay trong ngăn Hướng dẫn bên phải.
+          </span>
+        </div>
+      </section>
     </div>
   )
 }

@@ -181,11 +181,27 @@ export function ProofreadTab({
   const [loadingChapter, setLoadingChapter] = useState(false)
   const chapterLoadSeqRef = useRef(0)
 
-  // Layout & View modes
-  const [layoutMode, setLayoutMode] = useState<LayoutMode>('split')
+  // Layout & View modes — auto-default to single-pane on narrow screens (< 768px)
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>(() =>
+    typeof window !== 'undefined' && window.innerWidth < 768
+      ? 'translated'
+      : 'split',
+  )
   const [rawViewMode, setRawViewMode] = useState<RawViewMode>('reader')
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit')
-  const [fontSize, setFontSize] = useState<number>(15)
+  const [fontSize, setFontSize] = useState<number>(16)
+
+  // Keep layout usable when viewport narrows below 768px (Android / portrait phone)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)')
+    const onChange = (e: MediaQueryListEvent) => {
+      if (e.matches) {
+        setLayoutMode((prev) => (prev === 'split' ? 'translated' : prev))
+      }
+    }
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
 
   // Editor & Auto-save state
   const [draftText, setDraftText] = useState('')
@@ -850,12 +866,12 @@ export function ProofreadTab({
               </div>
             )}
 
-            {/* Layout Mode Switcher: Song song | Chỉ Bản gốc | Chỉ Bản dịch */}
+            {/* Layout Mode Switcher: Song song | Bản gốc | Bản dịch */}
             <div className="inline-flex items-center rounded-lg bg-slate-100 dark:bg-zinc-800 p-0.5 ml-1">
               <button
                 type="button"
                 onClick={() => setLayoutMode('split')}
-                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md font-medium cursor-pointer ${
+                className={`hidden md:inline-flex items-center gap-1 px-2.5 py-1 rounded-md font-medium cursor-pointer ${
                   layoutMode === 'split'
                     ? 'bg-white dark:bg-zinc-900 text-indigo-700 dark:text-indigo-300 shadow-xs'
                     : 'text-slate-600 dark:text-zinc-400'
@@ -873,7 +889,7 @@ export function ProofreadTab({
                     : 'text-slate-600 dark:text-zinc-400'
                 }`}
               >
-                Chỉ Bản gốc
+                Bản gốc
               </button>
               <button
                 type="button"
@@ -884,7 +900,7 @@ export function ProofreadTab({
                     : 'text-slate-600 dark:text-zinc-400'
                 }`}
               >
-                Chỉ Bản dịch
+                Bản dịch
               </button>
             </div>
           </div>
@@ -928,11 +944,11 @@ export function ProofreadTab({
             </button>
 
             <ActionMenu
-              label="Xuất bản & Công cụ"
+              label="Xuất bản và Công cụ"
               icon={<MoreHorizontal className="w-3.5 h-3.5" />}
               items={[
                 {
-                  label: 'Tìm & Thay thế toàn tập',
+                  label: 'Tìm và thay thế toàn tập',
                   icon: <Replace className="w-3.5 h-3.5 text-indigo-500" />,
                   disabled: chapters.length === 0,
                   onClick: () => {
@@ -941,7 +957,7 @@ export function ProofreadTab({
                   },
                 },
                 {
-                  label: 'Tải .docx (Times New Roman)',
+                  label: 'Tải tệp Word (Times New Roman)',
                   icon: <FileText className="w-3.5 h-3.5 text-sky-600" />,
                   dividerBefore: true,
                   href: getVolumeDocxExportUrl(
@@ -950,12 +966,12 @@ export function ProofreadTab({
                   ),
                 },
                 {
-                  label: 'Tải .docx (Cambria)',
+                  label: 'Tải tệp Word (Cambria)',
                   icon: <FileText className="w-3.5 h-3.5 text-sky-600" />,
                   href: getVolumeDocxExportUrl(selectedVolume.id, 'Cambria'),
                 },
                 {
-                  label: 'Tải .epub (Sách điện tử)',
+                  label: 'Tải sách điện tử EPUB',
                   icon: <Download className="w-3.5 h-3.5 text-emerald-600" />,
                   href: getVolumeEpubExportUrl(selectedVolume.id),
                 },

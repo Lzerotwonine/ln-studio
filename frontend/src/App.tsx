@@ -3,6 +3,14 @@ import { HelpDrawer } from './components/HelpDrawer'
 import { Sidebar } from './components/Sidebar'
 import { TopHeader } from './components/TopHeader'
 import { fetchHealth, fetchSeriesList, fetchVolumes } from './lib/api'
+import {
+  type AppearanceSettings,
+  applyAppearanceToDom,
+  isDarkPreset,
+  loadAppearanceSettings,
+  saveAppearanceSettings,
+} from './lib/appearance'
+import { ChaptersPage } from './pages/ChaptersPage'
 import { ContinuityTab } from './pages/ContinuityTab'
 import { DashboardPage } from './pages/DashboardPage'
 import { GlossaryTab } from './pages/GlossaryTab'
@@ -23,24 +31,24 @@ export function App() {
   const [selectedVolume, setSelectedVolume] = useState<Volume | null>(null)
   const [backendOnline, setBackendOnline] = useState(true)
   const [helpOpen, setHelpOpen] = useState(false)
-  const [isDark, setIsDark] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false
-    const stored = window.localStorage.getItem('ln-studio-theme')
-    if (stored === 'dark') return true
-    if (stored === 'light') return false
-    return window.matchMedia('(prefers-color-scheme: dark)').matches
-  })
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [appearance, setAppearance] = useState<AppearanceSettings>(() =>
+    loadAppearanceSettings(),
+  )
 
   useEffect(() => {
-    const root = document.documentElement
-    if (isDark) {
-      root.classList.add('dark')
-      window.localStorage.setItem('ln-studio-theme', 'dark')
-    } else {
-      root.classList.remove('dark')
-      window.localStorage.setItem('ln-studio-theme', 'light')
-    }
-  }, [isDark])
+    applyAppearanceToDom(appearance)
+    saveAppearanceSettings(appearance)
+  }, [appearance])
+
+  const isDark = isDarkPreset(appearance.themePreset)
+
+  const handleToggleDarkQuick = () => {
+    setAppearance((prev) => ({
+      ...prev,
+      themePreset: isDarkPreset(prev.themePreset) ? 'light' : 'dark',
+    }))
+  }
 
   // Load global series catalog
   const refreshSeries = useCallback(async (preferredSeriesId?: number | null) => {
@@ -132,7 +140,6 @@ export function App() {
 
   const handleSelectSeries = (series: Series | null) => {
     if (series?.id !== selectedSeries?.id) {
-      // Clear stale volume immediately before new series volumes load
       setSelectedVolume(null)
       setVolumes([])
     }
@@ -145,8 +152,10 @@ export function App() {
         activeSection={activeSection}
         onSelectSection={setActiveSection}
         isDark={isDark}
-        onToggleTheme={() => setIsDark((prev) => !prev)}
+        onToggleTheme={handleToggleDarkQuick}
         backendOnline={backendOnline}
+        mobileOpen={mobileMenuOpen}
+        onCloseMobile={() => setMobileMenuOpen(false)}
       />
 
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
@@ -158,9 +167,10 @@ export function App() {
           onSelectSeries={handleSelectSeries}
           onSelectVolume={setSelectedVolume}
           onOpenHelp={() => setHelpOpen(true)}
+          onOpenMobileMenu={() => setMobileMenuOpen(true)}
         />
 
-        <main className="flex-1 min-h-0 overflow-y-auto">
+        <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
           {activeSection === 'dashboard' && (
             <DashboardPage
               seriesList={seriesList}
@@ -170,6 +180,17 @@ export function App() {
               onSelectSeries={handleSelectSeries}
               onSelectVolume={setSelectedVolume}
               onRefreshSeries={refreshSeries}
+              onRefreshVolumes={refreshVolumes}
+              onOpenChapters={() => setActiveSection('chapters')}
+            />
+          )}
+
+          {activeSection === 'chapters' && (
+            <ChaptersPage
+              selectedSeries={selectedSeries}
+              selectedVolume={selectedVolume}
+              onBackToDashboard={() => setActiveSection('dashboard')}
+              onNavigate={setActiveSection}
               onRefreshVolumes={refreshVolumes}
             />
           )}
@@ -207,7 +228,11 @@ export function App() {
           )}
 
           {activeSection === 'settings' && (
-            <SettingsPage selectedSeries={selectedSeries} />
+            <SettingsPage
+              selectedSeries={selectedSeries}
+              appearance={appearance}
+              onChangeAppearance={setAppearance}
+            />
           )}
 
           {activeSection === 'guide' && (

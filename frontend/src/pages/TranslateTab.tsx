@@ -516,7 +516,7 @@ export function TranslateTab({
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-2.5">
           <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-zinc-100">
-            Dịch thuật Đa chế độ
+            Dịch thuật
           </h2>
           <span className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-zinc-800 text-xs font-medium text-slate-600 dark:text-zinc-300">
             {formatVolumeLabel(selectedVolume)}
@@ -658,9 +658,9 @@ export function TranslateTab({
               onChange={(e) => setMode(e.target.value as TranslationMode)}
               className="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950 font-medium"
             >
-              <option value="ln_vn">LN-VN Chuẩn (Master XML + Context)</option>
-              <option value="freeform">Dịch Tự Do (Freeform — Glossary gọn)</option>
-              <option value="hybrid">Hybrid (Tùy chọn từng khối Context)</option>
+              <option value="ln_vn">Chuẩn xuất bản (Ngữ cảnh đầy đủ)</option>
+              <option value="freeform">Dịch tự do (Thuật ngữ gọn nhẹ)</option>
+              <option value="hybrid">Tùy chọn linh hoạt (Chọn từng khối ngữ cảnh)</option>
             </select>
           </div>
 
@@ -669,7 +669,7 @@ export function TranslateTab({
               {/* Temperature */}
               <div className="lg:col-span-2">
                 <label className="flex items-center justify-between text-xs font-medium text-slate-500 dark:text-zinc-400 mb-1">
-                  <span>Temperature</span>
+                  <span>Độ sáng tạo</span>
                   <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">
                     {temperature.toFixed(1)}
                   </span>
@@ -784,7 +784,7 @@ export function TranslateTab({
 
           <label
             className="inline-flex items-center gap-1.5 cursor-pointer text-slate-700 dark:text-zinc-300"
-            title="Áp dụng tự động Kho từ nhạy cảm lên bản tạm trước khi dịch (giữ nguyên raw gốc)"
+            title="Áp dụng tự động Kho từ nhạy cảm lên bản tạm trước khi dịch (giữ nguyên bản gốc)"
           >
             <input
               type="checkbox"
@@ -792,12 +792,12 @@ export function TranslateTab({
               onChange={(e) => setPreMask(e.target.checked)}
               className="rounded border-slate-300 text-amber-600"
             />
-            <span>Pre-mask nhạy cảm</span>
+            <span>Tự che từ nhạy cảm</span>
           </label>
 
           <label
             className="inline-flex items-center gap-1.5 cursor-pointer text-rose-700 dark:text-rose-300 font-medium"
-            title="Cấu hình safety_settings = BLOCK_NONE (API) và gắn ngữ cảnh dịch thuật văn học <FICTION_CONTEXT>"
+            title="Nới lỏng bộ lọc an toàn ở mức tối đa kèm ngữ cảnh tác phẩm văn học cho nội dung trưởng thành"
           >
             <input
               type="checkbox"
@@ -805,7 +805,7 @@ export function TranslateTab({
               onChange={(e) => setMatureMode(e.target.checked)}
               className="rounded border-rose-300 text-rose-600"
             />
-            <span>Mature / R19 (BLOCK_NONE)</span>
+            <span>Chế độ 18+</span>
           </label>
 
           {(mode === 'freeform' || mode === 'hybrid') && (
@@ -823,7 +823,7 @@ export function TranslateTab({
                   }
                   className="rounded border-slate-300 text-indigo-600"
                 />
-                Glossary
+                Thuật ngữ
               </label>
 
               {mode === 'hybrid' && (
@@ -840,7 +840,7 @@ export function TranslateTab({
                       }
                       className="rounded border-slate-300 text-indigo-600"
                     />
-                    Roster
+                    Nhân vật
                   </label>
                   <label className="inline-flex items-center gap-1.5 cursor-pointer">
                     <input
@@ -868,13 +868,13 @@ export function TranslateTab({
                       }
                       className="rounded border-slate-300 text-indigo-600"
                     />
-                    Sub-Arc
+                    Diễn biến nhánh
                   </label>
                 </>
               )}
 
               <label className="inline-flex items-center gap-1.5">
-                <span>Rolling Context (câu cuối):</span>
+                <span>Câu nối từ chương trước:</span>
                 <input
                   type="number"
                   min={0}
@@ -915,7 +915,7 @@ export function TranslateTab({
                   Xong: {statusData.counts.completed}
                 </span>
                 <span className="text-rose-600 dark:text-rose-400 font-medium">
-                  Blocked: {statusData.counts.blocked}
+                  Bị chặn: {statusData.counts.blocked}
                 </span>
                 <span className="text-amber-600 dark:text-amber-400 font-medium">
                   Lỗi: {statusData.counts.failed}
@@ -1006,12 +1006,12 @@ export function TranslateTab({
 
                         <button
                           type="button"
-                          title="Xem Debug Context"
+                          title="Xem ngữ cảnh gửi AI"
                           onClick={() => setDebugChapter(ch)}
                           className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium border border-slate-200 dark:border-zinc-700 hover:bg-slate-50 dark:hover:bg-zinc-800 cursor-pointer"
                         >
                           <Bug className="w-3.5 h-3.5 text-indigo-500" />
-                          Debug
+                          Xem ngữ cảnh
                         </button>
 
                         {execChannel === 'api' && (
@@ -1031,12 +1031,12 @@ export function TranslateTab({
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500 dark:text-zinc-400 font-mono">
-                      <span>Raw: {ch.raw_chars.toLocaleString('vi-VN')}</span>
+                      <span>Gốc: {ch.raw_chars.toLocaleString('vi-VN')}</span>
                       <span>
                         Dịch: {ch.translated_chars.toLocaleString('vi-VN')}
                       </span>
-                      <span>Ratio: {ch.char_ratio.toFixed(2)}</span>
-                      {ch.used_slot && <span>Slot: {ch.used_slot}</span>}
+                      <span>Tỷ lệ: {ch.char_ratio.toFixed(2)}</span>
+                      {ch.used_slot && <span>Lượt gọi: {ch.used_slot}</span>}
                     </div>
 
                     {ch.error_message && (
@@ -1057,7 +1057,7 @@ export function TranslateTab({
             <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
               <div className="flex items-center gap-2 text-xs font-semibold">
                 <Terminal className="w-4 h-4 text-emerald-400" />
-                <span>Terminal Log Real-time (SSE)</span>
+                <span>Nhật ký dịch trực tiếp</span>
                 <span className="px-2 py-0.5 rounded-full text-[10px] bg-zinc-800 text-zinc-300 uppercase">
                   {jobState}
                 </span>

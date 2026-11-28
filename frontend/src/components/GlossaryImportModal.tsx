@@ -26,9 +26,9 @@ const MAPPING_FIELDS: Array<{
   label: string
   required?: boolean
 }> = [
-  { key: 'source_term', label: 'Từ gốc (JP/ZH/KO)', required: true },
+  { key: 'source_term', label: 'Từ gốc', required: true },
   { key: 'vi_term', label: 'Bản dịch tiếng Việt' },
-  { key: 'reading', label: 'Phiên âm (Romaji/Pinyin)' },
+  { key: 'reading', label: 'Phiên âm' },
   { key: 'han_viet', label: 'Hán-Việt' },
   { key: 'english_meaning', label: 'Nghĩa tiếng Anh' },
   { key: 'term_type', label: 'Loại thuật ngữ' },
@@ -140,10 +140,10 @@ export function GlossaryImportModal({
             <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
             <div>
               <h3 className="text-base font-bold text-slate-900 dark:text-zinc-100">
-                Import TSV / CSV vào Master Glossary
+                Nhập tệp TSV / CSV vào Kho thuật ngữ
               </h3>
               <p className="text-xs text-slate-500 dark:text-zinc-400">
-                Bộ truyện: <strong>{series.title}</strong> — tự nhận diện tiêu đề tiếng Việt & cho phép xem trước ánh xạ cột
+                Bộ truyện: <strong>{series.title}</strong> — tự nhận diện tiêu đề tiếng Việt và cho phép kiểm tra cột trước khi nhập
               </p>
             </div>
           </div>
@@ -341,12 +341,12 @@ export function GlossaryImportModal({
               }
               className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950 text-xs font-medium"
             >
-              <option value="approved">Đã duyệt (approved)</option>
-              <option value="translated">Đã dịch (translated)</option>
+              <option value="approved">Đã duyệt</option>
+              <option value="translated">Đã dịch</option>
               <option value="ignored">
-                Bỏ qua / Lưu kho tham khảo (ignored)
+                Bỏ qua (lưu kho tham khảo)
               </option>
-              <option value="new">Chưa dịch (new)</option>
+              <option value="new">Chưa dịch</option>
             </select>
             <label className="mt-2 inline-flex items-center gap-2 text-xs text-slate-600 dark:text-zinc-400 cursor-pointer">
               <input
@@ -410,7 +410,7 @@ export function GlossaryImportModal({
                 />
                 <div>
                   <div className="font-semibold text-slate-800 dark:text-zinc-100">
-                    Ghi đè trạng thái & bản dịch (Upsert)
+                    Ghi đè trạng thái và bản dịch
                   </div>
                   <div className="text-[11px] text-slate-500 dark:text-zinc-400">
                     Dùng cho Bước 2 để nâng từ đã lọc lên Đã duyệt
@@ -481,7 +481,7 @@ export function GlossaryImportModal({
               disabled={!file || submitting || previewLoading}
               className="px-5 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 disabled:opacity-45 text-white cursor-pointer"
             >
-              {submitting ? 'Đang nhập...' : 'Nhập vào Master Glossary'}
+              {submitting ? 'Đang nhập...' : 'Nhập vào Kho thuật ngữ'}
             </button>
           </div>
         </form>

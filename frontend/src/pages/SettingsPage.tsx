@@ -8,6 +8,7 @@ import {
   FileCode2,
   FlaskConical,
   KeyRound,
+  Palette,
   Plus,
   Radar,
   RefreshCw,
@@ -22,6 +23,13 @@ import {
 import { useCallback, useEffect, useState } from 'react'
 import { ReferencePacksManager } from '../components/ReferencePacksManager'
 import { SensitiveMasksManager } from '../components/SensitiveMasksManager'
+import {
+  type AppearanceSettings,
+  DEFAULT_APPEARANCE,
+  FONT_PRESETS,
+  FONT_SCALE_OPTIONS,
+  THEME_PRESETS,
+} from '../lib/appearance'
 import {
   createApiKey,
   createPreset,
@@ -61,6 +69,7 @@ import type {
 import { MODE_META, TASK_MODEL_META } from '../types'
 
 type SettingsTab =
+  | 'appearance'
   | 'keys'
   | 'models'
   | 'quota'
@@ -84,7 +93,7 @@ const QUOTA_BADGE: Record<QuotaSlotState, { label: string; cls: string }> = {
     cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
   },
   cooldown: {
-    label: 'Cooldown',
+    label: 'Tạm nghỉ',
     cls: 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300',
   },
   daily_exhausted: {
@@ -92,24 +101,30 @@ const QUOTA_BADGE: Record<QuotaSlotState, { label: string; cls: string }> = {
     cls: 'bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300',
   },
   session_disabled: {
-    label: 'Vô hiệu phiên (401/403)',
+    label: 'Tạm khóa phiên',
     cls: 'bg-zinc-200 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200',
   },
 }
 
 const PRESET_LANG_LABELS: Record<PresetSourceLang, string> = {
-  ja: 'Nhật (JA)',
-  zh: 'Trung (ZH)',
-  ko: 'Hàn (KO)',
+  ja: 'Tiếng Nhật',
+  zh: 'Tiếng Trung',
+  ko: 'Tiếng Hàn',
   any: 'Đa ngôn ngữ',
 }
 
 interface SettingsPageProps {
   selectedSeries?: Series | null
+  appearance: AppearanceSettings
+  onChangeAppearance: (next: AppearanceSettings) => void
 }
 
-export function SettingsPage({ selectedSeries = null }: SettingsPageProps) {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('keys')
+export function SettingsPage({
+  selectedSeries = null,
+  appearance,
+  onChangeAppearance,
+}: SettingsPageProps) {
+  const [activeTab, setActiveTab] = useState<SettingsTab>('appearance')
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [toastMsg, setToastMsg] = useState<string | null>(null)
 
@@ -575,23 +590,24 @@ export function SettingsPage({ selectedSeries = null }: SettingsPageProps) {
 
   const tabs: Array<{ id: SettingsTab; label: string; icon: typeof KeyRound }> =
     [
-      { id: 'keys', label: 'API Keys', icon: KeyRound },
+      { id: 'appearance', label: 'Giao diện hiển thị', icon: Palette },
+      { id: 'keys', label: 'Khóa API', icon: KeyRound },
       { id: 'models', label: 'Model ưu tiên', icon: Cpu },
-      { id: 'quota', label: 'Trạng thái Quota', icon: Activity },
-      { id: 'presets', label: 'Prompt Presets', icon: Sparkles },
+      { id: 'quota', label: 'Hạn mức gọi API', icon: Activity },
+      { id: 'presets', label: 'Mẫu lệnh dịch', icon: Sparkles },
       { id: 'masks', label: 'Kho từ nhạy cảm', icon: ShieldAlert },
-      { id: 'references', label: 'Reference Packs', icon: FileCode2 },
+      { id: 'references', label: 'Tài liệu tham chiếu', icon: FileCode2 },
     ]
 
   return (
-    <div className="max-w-7xl mx-auto p-6 space-y-6">
+    <div className="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
       <div>
         <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-zinc-100">
-          Cài đặt Hệ thống & Pool AI
+          Cài đặt
         </h2>
         <p className="text-sm text-slate-500 dark:text-zinc-400 mt-0.5">
-          Quản lý Multi-Key × Multi-Model Gemini Pool, theo dõi Quota theo thời
-          gian thực và cấu hình Prompt Presets.
+          Tùy chỉnh giao diện đọc, xoay vòng khóa API, phân bổ Model AI, mẫu
+          lệnh dịch và tài liệu tham chiếu.
         </p>
       </div>
 
@@ -649,6 +665,240 @@ export function SettingsPage({ selectedSeries = null }: SettingsPageProps) {
         })}
       </div>
 
+      {/* TAB 0: APPEARANCE (GIAO DIỆN HIỂN THỊ) */}
+      {activeTab === 'appearance' && (
+        <div className="space-y-6">
+          {/* Theme Presets */}
+          <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 sm:p-6 space-y-4 shadow-xs">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold text-slate-900 dark:text-zinc-100">
+                  Bộ màu nền
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
+                  Chọn bảng màu dịu mắt cho quá trình dịch và hiệu đính dài. Tự
+                  động lưu trên trình duyệt.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onChangeAppearance({ ...DEFAULT_APPEARANCE })
+                  notify('Đã khôi phục cài đặt giao diện mặc định.')
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border border-slate-200 dark:border-zinc-700 hover:bg-slate-50 dark:hover:bg-zinc-800 cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Khôi phục mặc định
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              {THEME_PRESETS.map((preset) => {
+                const active = appearance.themePreset === preset.id
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() =>
+                      onChangeAppearance({
+                        ...appearance,
+                        themePreset: preset.id,
+                      })
+                    }
+                    className={`text-left p-3.5 rounded-xl border transition-all cursor-pointer space-y-2.5 ${
+                      active
+                        ? 'border-indigo-600 ring-2 ring-indigo-500/25 bg-indigo-50/40 dark:bg-indigo-500/10'
+                        : 'border-slate-200 dark:border-zinc-700 hover:border-indigo-400'
+                    }`}
+                  >
+                    <div
+                      className="h-12 rounded-lg border p-2 flex items-center justify-between"
+                      style={{
+                        backgroundColor: preset.swatchBg,
+                        borderColor: preset.isDark ? '#27272a' : '#cbd5e1',
+                      }}
+                    >
+                      <div
+                        className="h-7 w-14 rounded-md px-1.5 flex items-center text-[10px] font-bold"
+                        style={{
+                          backgroundColor: preset.swatchSurface,
+                          color: preset.swatchText,
+                        }}
+                      >
+                        Aa
+                      </div>
+                      <span
+                        className="w-5 h-5 rounded-full"
+                        style={{ backgroundColor: preset.swatchAccent }}
+                      />
+                    </div>
+                    <div>
+                      <div className="font-semibold text-sm text-slate-900 dark:text-zinc-100">
+                        {preset.label}
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-zinc-400 leading-snug mt-0.5">
+                        {preset.desc}
+                      </div>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Font + Font Scale + Density + Icon Size */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Font Presets */}
+            <div className="lg:col-span-6 rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 sm:p-6 space-y-4 shadow-xs">
+              <div>
+                <h3 className="text-base font-semibold text-slate-900 dark:text-zinc-100">
+                  Phông chữ hiển thị
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
+                  Áp dụng ngay trên toàn ứng dụng và khung soạn thảo bản dịch.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {FONT_PRESETS.map((fp) => {
+                  const active = appearance.fontPreset === fp.id
+                  return (
+                    <button
+                      key={fp.id}
+                      type="button"
+                      onClick={() =>
+                        onChangeAppearance({
+                          ...appearance,
+                          fontPreset: fp.id,
+                        })
+                      }
+                      className={`text-left p-3.5 rounded-xl border cursor-pointer transition-colors ${
+                        active
+                          ? 'border-indigo-600 bg-indigo-50/50 dark:bg-indigo-500/10'
+                          : 'border-slate-200 dark:border-zinc-700 hover:border-indigo-400'
+                      }`}
+                    >
+                      <div
+                        className="text-sm font-bold text-slate-900 dark:text-zinc-100"
+                        style={{ fontFamily: fp.previewFamily }}
+                      >
+                        {fp.label} — Tiếng Việt
+                      </div>
+                      <div className="text-xs text-slate-500 dark:text-zinc-400 mt-1">
+                        {fp.desc}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Scale + Density + Icons */}
+            <div className="lg:col-span-6 rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 sm:p-6 space-y-5 shadow-xs">
+              <div className="space-y-2">
+                <div className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
+                  Cỡ chữ giao diện
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {FONT_SCALE_OPTIONS.map((opt) => {
+                    const active = appearance.fontScale === opt.value
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() =>
+                          onChangeAppearance({
+                            ...appearance,
+                            fontScale: opt.value,
+                          })
+                        }
+                        className={`px-3 py-2 rounded-xl text-xs font-semibold border cursor-pointer transition-colors ${
+                          active
+                            ? 'border-indigo-600 bg-indigo-600 text-white'
+                            : 'border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-800'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <div className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
+                    Mật độ bố cục
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(
+                      [
+                        ['comfortable', 'Thoáng'],
+                        ['compact', 'Gọn'],
+                      ] as const
+                    ).map(([val, label]) => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() =>
+                          onChangeAppearance({ ...appearance, density: val })
+                        }
+                        className={`px-3 py-2 rounded-xl text-xs font-semibold border cursor-pointer ${
+                          appearance.density === val
+                            ? 'border-indigo-600 bg-indigo-600 text-white'
+                            : 'border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-800'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-sm font-semibold text-slate-900 dark:text-zinc-100">
+                    Kích thước biểu tượng
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(
+                      [
+                        ['normal', 'Vừa'],
+                        ['large', 'Lớn'],
+                      ] as const
+                    ).map(([val, label]) => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() =>
+                          onChangeAppearance({ ...appearance, iconScale: val })
+                        }
+                        className={`px-3 py-2 rounded-xl text-xs font-semibold border cursor-pointer ${
+                          appearance.iconScale === val
+                            ? 'border-indigo-600 bg-indigo-600 text-white'
+                            : 'border-slate-200 dark:border-zinc-700 text-slate-700 dark:text-zinc-200 hover:bg-slate-50 dark:hover:bg-zinc-800'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 dark:border-zinc-800 bg-slate-50/70 dark:bg-zinc-950/60 p-4 space-y-1.5">
+                <div className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+                  Xem thử trực tiếp
+                </div>
+                <p className="text-sm text-slate-800 dark:text-zinc-200 leading-relaxed">
+                  “Ánh bình minh dần lan qua những mái ngói cổ kính của vương đô,
+                  báo hiệu một chương mới sắp mở ra.”
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* TAB 1: API KEYS */}
       {activeTab === 'keys' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -657,11 +907,11 @@ export function SettingsPage({ selectedSeries = null }: SettingsPageProps) {
             className="lg:col-span-5 rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 space-y-4 shadow-xs"
           >
             <h3 className="text-base font-semibold text-slate-900 dark:text-zinc-100">
-              Thêm Gemini API Key mới
+              Thêm khóa API Gemini mới
             </h3>
             <div>
               <label className="block text-xs font-medium text-slate-600 dark:text-zinc-400 mb-1">
-                Tên định danh (key_name) *
+                Tên gợi nhớ *
               </label>
               <input
                 type="text"
@@ -691,14 +941,14 @@ export function SettingsPage({ selectedSeries = null }: SettingsPageProps) {
               className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              {addingKey ? 'Đang thêm...' : 'Thêm vào Pool'}
+              {addingKey ? 'Đang thêm...' : 'Thêm vào xoay vòng API'}
             </button>
           </form>
 
           <div className="lg:col-span-7 rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden shadow-xs">
             <div className="px-5 py-4 border-b border-slate-200 dark:border-zinc-800 flex items-center justify-between">
               <h3 className="text-base font-semibold text-slate-900 dark:text-zinc-100">
-                Danh sách API Keys ({apiKeys.length})
+                Danh sách khóa API ({apiKeys.length})
               </h3>
               <span className="text-xs text-slate-500 dark:text-zinc-400">
                 Đang bật: {apiKeys.filter((k) => k.is_active).length}
@@ -707,7 +957,7 @@ export function SettingsPage({ selectedSeries = null }: SettingsPageProps) {
 
             {apiKeys.length === 0 ? (
               <div className="p-10 text-center text-sm text-slate-500 dark:text-zinc-400">
-                Chưa có API Key nào. Thêm ít nhất 1 key để kích hoạt Pool.
+                Chưa có khóa API nào. Thêm ít nhất 1 khóa để bắt đầu gọi AI.
               </div>
             ) : (
               <div className="divide-y divide-slate-100 dark:divide-zinc-800">
@@ -1213,11 +1463,11 @@ export function SettingsPage({ selectedSeries = null }: SettingsPageProps) {
           {/* Summary cards */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             {[
-              { label: 'Slot hoạt động', value: quotaSummary.active, tone: 'text-slate-900 dark:text-zinc-100' },
+              { label: 'Lượt gọi hoạt động', value: quotaSummary.active, tone: 'text-slate-900 dark:text-zinc-100' },
               { label: 'Sẵn sàng', value: quotaSummary.ready, tone: 'text-emerald-600 dark:text-emerald-400' },
-              { label: 'Đang Cooldown', value: quotaSummary.cooldown, tone: 'text-amber-600 dark:text-amber-400' },
+              { label: 'Đang tạm nghỉ', value: quotaSummary.cooldown, tone: 'text-amber-600 dark:text-amber-400' },
               { label: 'Hết hạn ngày', value: quotaSummary.daily_exhausted, tone: 'text-rose-600 dark:text-rose-400' },
-              { label: 'Vô hiệu phiên', value: quotaSummary.session_disabled, tone: 'text-zinc-500 dark:text-zinc-400' },
+              { label: 'Tạm khóa phiên', value: quotaSummary.session_disabled, tone: 'text-zinc-500 dark:text-zinc-400' },
             ].map((card) => (
               <div
                 key={card.label}
@@ -1237,7 +1487,7 @@ export function SettingsPage({ selectedSeries = null }: SettingsPageProps) {
             <div className="px-5 py-4 border-b border-slate-200 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <h3 className="text-base font-semibold text-slate-900 dark:text-zinc-100">
-                  Bảng trạng thái Quota (key_name|model_id)
+                  Bảng theo dõi hạn mức gọi API
                 </h3>
                 <label className="inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-zinc-400 cursor-pointer">
                   <input

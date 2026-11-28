@@ -10,6 +10,7 @@ export type VolumeStatus =
 
 export type NavSection =
   | 'dashboard'
+  | 'chapters'
   | 'glossary'
   | 'characters'
   | 'translate'
@@ -151,20 +152,20 @@ export const LANG_META: Record<
   { label: string; short: string; badgeClass: string }
 > = {
   ja: {
-    label: 'Tiếng Nhật (JA)',
-    short: 'JA',
+    label: 'Tiếng Nhật',
+    short: 'Nhật',
     badgeClass:
       'bg-rose-100 text-rose-700 border-rose-200 dark:bg-rose-500/15 dark:text-rose-300 dark:border-rose-500/30',
   },
   zh: {
-    label: 'Tiếng Trung (ZH)',
-    short: 'ZH',
+    label: 'Tiếng Trung',
+    short: 'Trung',
     badgeClass:
       'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30',
   },
   ko: {
-    label: 'Tiếng Hàn (KO)',
-    short: 'KO',
+    label: 'Tiếng Hàn',
+    short: 'Hàn',
     badgeClass:
       'bg-sky-100 text-sky-700 border-sky-200 dark:bg-sky-500/15 dark:text-sky-300 dark:border-sky-500/30',
   },
@@ -175,20 +176,20 @@ export const MODE_META: Record<
   { label: string; desc: string; badgeClass: string }
 > = {
   ln_vn: {
-    label: 'LN-VN Chuẩn',
-    desc: 'Quy trình chuẩn hóa đầy đủ XML Master Prompt + Continuity Pack',
+    label: 'Chuẩn xuất bản',
+    desc: 'Quy trình đầy đủ với tài liệu tham chiếu và hồ sơ ngữ cảnh tập truyện',
     badgeClass:
       'bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-500/15 dark:text-indigo-300 dark:border-indigo-500/30',
   },
   freeform: {
-    label: 'Dịch Tự Do (Freeform)',
-    desc: 'Dịch tự do linh hoạt theo System Prompt tùy chỉnh',
+    label: 'Dịch tự do',
+    desc: 'Dịch linh hoạt theo lệnh dịch tùy chỉnh kèm thuật ngữ gọn nhẹ',
     badgeClass:
       'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30',
   },
   hybrid: {
-    label: 'Hybrid',
-    desc: 'Kết hợp System Prompt tự do với Glossary, Roster & Quan hệ chọn lọc',
+    label: 'Tùy chọn linh hoạt',
+    desc: 'Kết hợp lệnh dịch tự do với từng khối thuật ngữ, nhân vật và xưng hô chọn lọc',
     badgeClass:
       'bg-violet-100 text-violet-700 border-violet-200 dark:bg-violet-500/15 dark:text-violet-300 dark:border-violet-500/30',
   },
@@ -199,7 +200,7 @@ export const VOLUME_STATUS_META: Record<
   { label: string; badgeClass: string }
 > = {
   imported: {
-    label: 'Đã nhập raw',
+    label: 'Đã nhập bản gốc',
     badgeClass:
       'bg-slate-100 text-slate-700 dark:bg-zinc-800 dark:text-zinc-300',
   },
@@ -209,7 +210,7 @@ export const VOLUME_STATUS_META: Record<
       'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300',
   },
   continuity_done: {
-    label: 'Xong Continuity',
+    label: 'Xong nhân vật và xưng hô',
     badgeClass:
       'bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300',
   },
@@ -561,7 +562,7 @@ export const CHAPTER_STATUS_META: Record<
       'bg-slate-100 text-slate-700 dark:bg-zinc-800 dark:text-zinc-300',
   },
   summarized: {
-    label: 'Đã MAP',
+    label: 'Đã phân tích',
     badgeClass:
       'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300',
   },
@@ -576,12 +577,12 @@ export const CHAPTER_STATUS_META: Record<
       'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
   },
   blocked: {
-    label: 'Bị chặn (Blocked)',
+    label: 'Bị chặn bộ lọc',
     badgeClass:
       'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300 font-semibold',
   },
   failed: {
-    label: 'Lỗi (Failed)',
+    label: 'Bị lỗi',
     badgeClass:
       'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300',
   },
@@ -793,32 +794,32 @@ export const TASK_MODEL_META: Array<{
   {
     key: 'translate_main',
     label: 'Dịch chương chính',
-    desc: 'Tác vụ trọng tâm cần văn phong tốt (gợi ý Pro → Flash)',
+    desc: 'Tác vụ trọng tâm cần văn phong mượt mà (nên chọn Model mạnh)',
   },
   {
     key: 'glossary_translate',
-    label: 'Dịch thuật ngữ (Glossary)',
-    desc: 'Dịch batch 300–400 từ JSON có đối soát (gợi ý Flash)',
+    label: 'Dịch kho thuật ngữ',
+    desc: 'Dịch hàng loạt từng đợt từ mới có đối soát thiếu từ',
   },
   {
     key: 'continuity_map',
-    label: 'Tóm tắt từng chương (MAP)',
-    desc: 'Chạy qua từng chương để trích xuất xưng hô (gợi ý Flash-Lite)',
+    label: 'Phân tích từng chương',
+    desc: 'Đọc từng chương để nhận diện nhân vật và cách xưng hô',
   },
   {
     key: 'continuity_reduce',
-    label: 'Tổng hợp Tập (REDUCE)',
-    desc: '1 request/tập tổng hợp RTAS & Sub-Arc (gợi ý Flash → Pro)',
+    label: 'Tổng hợp cả tập',
+    desc: 'Gom dữ liệu toàn tập, tóm tắt cốt truyện và tiến triển quan hệ',
   },
   {
     key: 'sensitive_scan',
-    label: 'Quét từ nhạy cảm (Scan)',
-    desc: 'Tìm cụm từ kích hoạt safety filter (gợi ý Flash-Lite)',
+    label: 'Quét từ nhạy cảm',
+    desc: 'Tìm các cụm từ dễ bị bộ lọc an toàn chặn để thay thế nhẹ nhàng',
   },
   {
     key: 'proofread_retranslate',
     label: 'Dịch lại đoạn bôi đen',
-    desc: 'Trau chuốt đoạn nhỏ trong Hiệu đính (gợi ý Flash → Pro)',
+    desc: 'Trau chuốt đoạn ngắn khi hiệu đính bản dịch',
   },
 ]
 

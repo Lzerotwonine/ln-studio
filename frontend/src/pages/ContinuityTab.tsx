@@ -422,18 +422,18 @@ export function ContinuityTab({
         <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-8 text-center space-y-3">
           <Users className="w-8 h-8 mx-auto text-indigo-500" />
           <h2 className="text-lg font-bold text-slate-900 dark:text-zinc-100">
-            Chọn Bộ truyện & Tập để quản lý Nhân vật & Xưng hô
+            Chọn bộ truyện và tập để quản lý Nhân vật và Xưng hô
           </h2>
           <p className="text-sm text-slate-500 dark:text-zinc-400">
-            Hãy tạo bộ truyện và ít nhất 1 tập ở Quản lý Truyện trước khi chạy
-            MAP/REDUCE và duyệt Continuity Pack.
+            Hãy tạo bộ truyện và ít nhất một tập ở mục Quản lý truyện trước khi
+            phân tích nhân vật và chốt xưng hô.
           </p>
           <button
             type="button"
             onClick={onBackToDashboard}
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer"
           >
-            Đi tới Quản lý Truyện
+            Đi tới Quản lý truyện
           </button>
         </div>
       </div>
@@ -452,14 +452,14 @@ export function ContinuityTab({
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-2.5">
           <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-zinc-100">
-            Nhân vật & Xưng hô
+            Nhân vật và Xưng hô
           </h2>
           <span className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-zinc-800 text-xs font-medium text-slate-600 dark:text-zinc-300">
             {formatVolumeLabel(selectedVolume)}
           </span>
           {statusInfo && (
             <span className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 text-xs font-semibold">
-              MAP: {statusInfo.summarized_chapters}/{statusInfo.total_chapters}{' '}
+              Đã phân tích: {statusInfo.summarized_chapters}/{statusInfo.total_chapters}{' '}
               chương
             </span>
           )}
@@ -478,7 +478,7 @@ export function ContinuityTab({
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 dark:bg-zinc-100 dark:hover:bg-zinc-200 dark:text-zinc-900 text-white disabled:opacity-45 cursor-pointer"
           >
             <Play className="w-3.5 h-3.5" />
-            {runningMap ? 'Đang chạy MAP PHASE...' : 'Chạy MAP PHASE'}
+            {runningMap ? 'Đang phân tích từng chương...' : 'Phân tích từng chương'}
           </button>
 
           <button
@@ -490,11 +490,11 @@ export function ContinuityTab({
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-45 cursor-pointer"
           >
             <GitMerge className="w-3.5 h-3.5" />
-            {runningReduce ? 'Đang REDUCE & MERGE...' : 'Chạy REDUCE & MERGE'}
+            {runningReduce ? 'Đang tổng hợp cả tập...' : 'Tổng hợp cả tập'}
           </button>
 
           <ActionMenu
-            label="Tiện ích & XML"
+            label="Tiện ích"
             icon={<MoreHorizontal className="w-3.5 h-3.5" />}
             items={[
               {
@@ -507,14 +507,14 @@ export function ContinuityTab({
                 onClick: () => void loadAll(),
               },
               {
-                label: 'Chạy lại MAP toàn bộ (bỏ cache)',
+                label: 'Phân tích lại toàn bộ chương',
                 icon: <RotateCcw className="w-3.5 h-3.5 text-amber-500" />,
                 disabled:
                   runningMap || (statusInfo?.total_chapters ?? 0) === 0,
                 onClick: () => void handleRunMap(true),
               },
               {
-                label: 'Sao chép Continuity XML',
+                label: 'Sao chép tệp ngữ cảnh XML',
                 icon: <Copy className="w-3.5 h-3.5 text-indigo-500" />,
                 disabled: !xmlContent,
                 dividerBefore: true,
@@ -562,7 +562,7 @@ export function ContinuityTab({
           }`}
         >
           <Users className="w-4 h-4" />
-          Nhân vật (Roster & Sub-Arc)
+          Danh sách nhân vật
           <span
             className={`text-[11px] px-1.5 py-0.5 rounded-full ${
               subTab === 'roster'
@@ -608,7 +608,7 @@ export function ContinuityTab({
           }`}
         >
           <Code2 className="w-4 h-4" />
-          Xem trước / Tải XML
+          Hồ sơ ngữ cảnh XML
         </button>
       </div>
 
@@ -840,7 +840,7 @@ export function ContinuityTab({
           {filteredRelationships.length === 0 ? (
             <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-10 text-center text-sm text-slate-500 dark:text-zinc-400">
               {relationships.length === 0
-                ? 'Chưa có cặp quan hệ nào. Hãy chạy MAP PHASE + REDUCE & MERGE hoặc tạo thủ công.'
+                ? 'Chưa có cặp quan hệ nào. Hãy chạy Phân tích từng chương và Tổng hợp cả tập hoặc thêm thủ công.'
                 : 'Không có cặp quan hệ nào khớp bộ lọc hiện tại.'}
             </div>
           ) : (
@@ -914,7 +914,7 @@ export function ContinuityTab({
                             </>
                           ) : (
                             <>
-                              <Lock className="w-3.5 h-3.5" /> Khóa (Lock)
+                              <Lock className="w-3.5 h-3.5" /> Khóa cố định
                             </>
                           )}
                         </button>
@@ -934,7 +934,7 @@ export function ContinuityTab({
                     {rel.evidence_quote && (
                       <div className="rounded-xl bg-white/80 dark:bg-zinc-950/70 border border-slate-200 dark:border-zinc-800 px-3.5 py-2.5 text-xs">
                         <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-400 mb-0.5">
-                          Trích thoại gốc (Evidence Quote)
+                          Trích dẫn thoại gốc
                         </div>
                         <p className="text-slate-700 dark:text-zinc-200 italic leading-relaxed">
                           “{rel.evidence_quote}”

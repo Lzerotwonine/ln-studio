@@ -150,11 +150,11 @@ export function ReferencePacksManager() {
         <div>
           <h3 className="text-base font-bold text-slate-900 dark:text-zinc-100 flex items-center gap-2">
             <FileCode2 className="w-4 h-4 text-emerald-500" />
-            LN-VN Reference Packs ({files.length})
+            Tài liệu tham chiếu ({files.length})
           </h3>
           <p className="text-xs text-slate-500 dark:text-zinc-400">
-            Các tệp tham chiếu tự động nạp đúng pha (Tóm tắt / Dịch) khi bộ
-            truyện chạy ở chế độ <strong>LN-VN Chuẩn</strong>.
+            Các tệp quy tắc dịch tự động đính kèm theo từng pha khi bộ truyện
+            chạy ở chế độ <strong>Chuẩn xuất bản</strong>.
           </p>
           <div className="flex flex-wrap items-center gap-3 mt-1.5 text-[11px] text-slate-500 dark:text-zinc-400">
             <span>

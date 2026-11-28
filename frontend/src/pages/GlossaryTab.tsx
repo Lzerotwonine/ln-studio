@@ -751,18 +751,18 @@ export function GlossaryTab({
         <div className="rounded-2xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-8 text-center space-y-3">
           <BookMarked className="w-8 h-8 mx-auto text-indigo-500" />
           <h2 className="text-lg font-bold text-slate-900 dark:text-zinc-100">
-            Chưa có Bộ truyện nào được chọn
+            Chưa có bộ truyện nào được chọn
           </h2>
           <p className="text-sm text-slate-500 dark:text-zinc-400">
-            Hãy tạo hoặc chọn một bộ truyện ở Quản lý Truyện để bắt đầu nhập
-            file và xây dựng bảng Master Glossary.
+            Hãy tạo hoặc chọn một bộ truyện ở Quản lý truyện để bắt đầu xây dựng
+            Kho thuật ngữ.
           </p>
           <button
             type="button"
             onClick={onBackToDashboard}
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer"
           >
-            Đi tới Quản lý Truyện
+            Đi tới Quản lý truyện
           </button>
         </div>
       </div>
@@ -804,7 +804,7 @@ export function GlossaryTab({
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-zinc-100">
-              Master Glossary
+              Kho thuật ngữ
             </h2>
             <span
               className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
@@ -815,12 +815,12 @@ export function GlossaryTab({
             >
               {effectiveVolumeId && selectedVolume
                 ? `Riêng ${formatVolumeLabel(selectedVolume)}`
-                : 'Toàn Series'}
+                : 'Toàn bộ truyện'}
             </span>
           </div>
           <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
-            Hỗ trợ chọn đa dạng kiểu Excel (Click, Shift+Click, Ctrl+Click,
-            Ctrl+Shift+Click) và đồng bộ 2 bước từ Excel lịch sử.
+            Đếm từ theo từng tập, dịch hàng loạt bằng AI, chọn nhiều dòng nhanh
+            và nhập kho thuật ngữ từ bảng tính.
           </p>
         </div>
 

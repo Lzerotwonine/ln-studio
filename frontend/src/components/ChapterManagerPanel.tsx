@@ -206,15 +206,15 @@ export function ChapterManagerPanel({
         <div>
           <h4 className="text-sm font-semibold text-slate-900 dark:text-zinc-100 flex items-center gap-2">
             <FileText className="w-4 h-4 text-indigo-500" />
-            Kho Chương — {formatVolumeLabel(volume)} ({chapters.length})
+            Danh sách chương — {formatVolumeLabel(volume)} ({chapters.length})
           </h4>
           <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
-            Tổng {totalRawChars.toLocaleString('vi-VN')} ký tự Raw · Đổi tên
-            trực tiếp, xem/tách tại vị trí con trỏ, hoặc gộp 2 chương kề nhau.
+            Tổng {totalRawChars.toLocaleString('vi-VN')} ký tự bản gốc · Đổi tên
+            trực tiếp, xem hoặc tách tại con trỏ và gộp chương kề nhau.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => {
@@ -233,24 +233,24 @@ export function ChapterManagerPanel({
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer"
           >
             <Upload className="w-3.5 h-3.5" />
-            Nhập tệp (.epub/.txt/.docx)
+            Nhập tệp EPUB / TXT / Word
           </button>
         </div>
       </div>
 
       {loading ? (
         <div className="p-8 text-center text-xs text-slate-400">
-          Đang tải Kho Chương...
+          Đang tải danh sách chương...
         </div>
       ) : chapters.length === 0 ? (
         <div className="p-8 text-center text-xs text-slate-500 dark:text-zinc-400 space-y-2">
           <p>
-            Tập/Quyển này chưa có chương nào. Bạn có thể nhập tệp
-            `.epub`/`.txt`/`.docx` hoặc dán trực tiếp văn bản Raw.
+            Tập này chưa có chương nào. Bạn có thể nhập tệp EPUB, TXT, Word hoặc
+            dán trực tiếp văn bản gốc.
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
+        <div className="overflow-x-auto max-h-[640px] overflow-y-auto">
           <table className="w-full text-left text-xs border-collapse">
             <thead className="sticky top-0 bg-slate-50 dark:bg-zinc-950 text-slate-500 dark:text-zinc-400 uppercase text-[11px] border-b border-slate-200 dark:border-zinc-800">
               <tr>

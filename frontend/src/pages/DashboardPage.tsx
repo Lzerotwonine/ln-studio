@@ -1,6 +1,7 @@
 import {
   BookOpen,
   Edit3,
+  FileStack,
   FolderPlus,
   Layers,
   Plus,
@@ -11,7 +12,6 @@ import {
   X,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { ChapterManagerPanel } from '../components/ChapterManagerPanel'
 import { ImportVolumeModal } from '../components/ImportVolumeModal'
 import {
   createSeries,
@@ -52,6 +52,7 @@ interface DashboardPageProps {
     seriesId: number | null,
     preferredVolumeId?: number | null,
   ) => Promise<void>
+  onOpenChapters: () => void
 }
 
 const DEFAULT_HYBRID: HybridConfig = {
@@ -74,8 +75,8 @@ const EMPTY_SERIES_FORM: SeriesPayload = {
 const VOLUME_LABEL_SUGGESTIONS = [
   'Quyển 1',
   'Tập 1',
-  'Chương 1-200',
-  'Full Truyện',
+  'Chương 1–200',
+  'Trọn bộ',
 ]
 
 export function DashboardPage({
@@ -87,13 +88,13 @@ export function DashboardPage({
   onSelectVolume,
   onRefreshSeries,
   onRefreshVolumes,
+  onOpenChapters,
 }: DashboardPageProps) {
   const [presets, setPresets] = useState<PromptPreset[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [langFilter, setLangFilter] = useState<'all' | SourceLang>('all')
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [toastMsg, setToastMsg] = useState<string | null>(null)
-  const [chapterRefreshSignal, setChapterRefreshSignal] = useState(0)
 
   // Series modal state
   const [seriesModalOpen, setSeriesModalOpen] = useState(false)
@@ -289,11 +290,11 @@ export function DashboardPage({
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-zinc-100">
-            Quản lý Truyện & Kho Chương
+            Quản lý truyện
           </h2>
           <p className="text-sm text-slate-500 dark:text-zinc-400 mt-0.5">
-            Tổ chức các bộ truyện đa ngôn ngữ (JA / ZH / KO), tạo Tập/Quyển nhãn
-            tự do và quản lý Kho Chương chi tiết.
+            Tạo bộ truyện, chọn phong cách dịch và tổ chức danh sách tập hoặc
+            quyển theo ý muốn.
           </p>
         </div>
 
@@ -357,9 +358,9 @@ export function DashboardPage({
                 className="px-2.5 py-2 text-xs rounded-lg border border-slate-200 dark:border-zinc-700 bg-slate-50 dark:bg-zinc-950 text-slate-700 dark:text-zinc-200"
               >
                 <option value="all">Tất cả</option>
-                <option value="ja">JA</option>
-                <option value="zh">ZH</option>
-                <option value="ko">KO</option>
+                <option value="ja">Nhật</option>
+                <option value="zh">Trung</option>
+                <option value="ko">Hàn</option>
               </select>
             </div>
           </div>
@@ -482,7 +483,7 @@ export function DashboardPage({
                   </p>
                 ) : (
                   <div className="text-xs text-slate-500 dark:text-zinc-400">
-                    Master Prompt XML:{' '}
+                    Tệp lệnh dịch chuẩn:{' '}
                     <code className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-zinc-800">
                       {selectedSeries.master_prompt_file}
                     </code>
@@ -556,10 +557,23 @@ export function DashboardPage({
                             )}
                           </div>
 
-                          <div className="flex items-center gap-1 shrink-0">
+                          <div className="flex flex-wrap items-center gap-1 shrink-0">
                             <button
                               type="button"
-                              title="Nhập tệp .epub/.txt/.docx"
+                              title="Mở Kho chương của tập này"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                onSelectVolume(vol)
+                                onOpenChapters()
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50/70 dark:bg-emerald-500/10 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 cursor-pointer"
+                            >
+                              <FileStack className="w-3.5 h-3.5" />
+                              Kho chương
+                            </button>
+                            <button
+                              type="button"
+                              title="Nhập tệp EPUB, TXT hoặc Word"
                               onClick={(e) => {
                                 e.stopPropagation()
                                 onSelectVolume(vol)
@@ -568,7 +582,7 @@ export function DashboardPage({
                               className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/15 cursor-pointer"
                             >
                               <Upload className="w-3.5 h-3.5" />
-                              Nhập truyện
+                              Nhập sách
                             </button>
                             <button
                               type="button"
@@ -599,17 +613,6 @@ export function DashboardPage({
                   </div>
                 )}
               </div>
-
-              {/* Chapter Manager Panel for Selected Volume */}
-              {selectedVolume && (
-                <ChapterManagerPanel
-                  volume={selectedVolume}
-                  refreshSignal={chapterRefreshSignal}
-                  onOpenImportModal={() => setImportingVolume(selectedVolume)}
-                  onNotify={notify}
-                  onError={setErrorMsg}
-                />
-              )}
             </>
           ) : (
             <div className="rounded-2xl border border-dashed border-slate-300 dark:border-zinc-700 p-12 text-center space-y-3 bg-white/60 dark:bg-zinc-900/40">
@@ -1006,10 +1009,10 @@ export function DashboardPage({
           seriesTitle={selectedSeries.title}
           onClose={() => setImportingVolume(null)}
           onImported={(res) => {
-            setChapterRefreshSignal((n) => n + 1)
             notify(
               `Đã nhập ${res.chapters_imported} chương (${res.total_chars.toLocaleString('vi-VN')} ký tự) vào ${formatVolumeLabel(importingVolume)}.`,
             )
+            void onRefreshVolumes(selectedSeries.id, importingVolume.id)
           }}
         />
       )}
